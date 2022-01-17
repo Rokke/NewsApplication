@@ -1,0 +1,20 @@
+name: news_common
+description: A new Flutter package project.
+version: 0.0.1
+homepage: null
+
+environment:
+  sdk: ">=2.15.0 <3.0.0"
+  flutter: ">=1.17.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # cached_network_image: ^3.0.0
+  html_unescape:
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter: null
