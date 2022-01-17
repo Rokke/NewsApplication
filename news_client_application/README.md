@@ -1,16 +1,8 @@
 # news_client_application
 
-A new Flutter project.
+Client for the rss_feed_reader that fetched unread articles for the server and able to mark them read, restart the server and move between articles
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://flutter.dev/docs/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://flutter.dev/docs/cookbook)
-
-For help getting started with Flutter, view our
-[online documentation](https://flutter.dev/docs), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+When starting it first time you must configure it where you have to give the same secret as you have on the server and you can select a internal and external address to connect to the server.
+Currently it's hardcoded to use the port 3344
