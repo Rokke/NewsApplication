@@ -16,6 +16,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.read(providerConfig.notifier);
     txtSecret.text = config.socketSecret;
+    txtSocketInternal.text = config.socketServerInternal;
+    txtSocketExternal.text = config.socketServerExternal;
     // txtLogpath.text = config.logFilepath;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
