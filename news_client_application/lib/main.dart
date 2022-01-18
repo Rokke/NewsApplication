@@ -9,11 +9,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(ProviderScope(
     overrides: [providerConfig.overrideWithValue(appConfig)],
-    child: MyApp(),
+    child: const MyApp(),
   ));
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
@@ -22,7 +24,8 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.blue),
       darkTheme: ThemeData(primarySwatch: Colors.deepPurple, brightness: Brightness.dark, appBarTheme: AppBarTheme(backgroundColor: Colors.deepPurple[900]), bottomAppBarColor: Colors.deepPurple[900]),
       themeMode: ThemeMode.dark,
-      home: HomePage(),
+      debugShowCheckedModeBanner: false,
+      home: const HomePage(),
     );
   }
 }

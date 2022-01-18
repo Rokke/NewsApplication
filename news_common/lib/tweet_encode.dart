@@ -3,7 +3,9 @@ import 'package:html_unescape/html_unescape_small.dart';
 import 'package:news_common/news_common.dart';
 
 class TweetEncodeBase extends NewsItem {
+  @override
   final int id; //, tweetUserId;
+  @override
   final String text;
   final DateTime createdAt;
   TweetEncodeBase? retweet;

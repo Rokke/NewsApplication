@@ -9,7 +9,7 @@ import 'package:rss_feed_reader/utils/misc_functions.dart';
 
 class TwitterWidget extends ConsumerWidget {
   const TwitterWidget({Key? key}) : super(key: key);
-  static const double TWITTER_LIST_WIDTH = 400;
+  static const double twitterListWidth = 400;
 
   static Widget tweetContainer(BuildContext context, Reader read, TweetEncodeBase tweet, {bool isRetweet = false}) => Stack(
         children: [
@@ -19,14 +19,14 @@ class TwitterWidget extends ConsumerWidget {
               decoration: BoxDecoration(
                 border: Border.all(width: 2),
                 borderRadius: BorderRadius.circular(5),
-                color: tweet.isRetweet ? ColorContants.BodyTweetRetweet : ColorContants.BodyTweet,
+                color: tweet.isRetweet ? ColorContants.bodyTweetRetweet : ColorContants.bodyTweet,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Container(
-                    constraints: const BoxConstraints.tightFor(width: TWITTER_LIST_WIDTH - 80),
-                    color: tweet.isRetweet ? ColorContants.TitleTweetRetweet : ColorContants.TitleTweet,
+                    constraints: const BoxConstraints.tightFor(width: twitterListWidth - 80),
+                    color: tweet.isRetweet ? ColorContants.titleTweetRetweet : ColorContants.titleTweet,
                     child: Row(
                       children: [
                         Flexible(child: Center(child: Text('${tweet.parentUser.name}(${tweet.parentUser.username})', style: Theme.of(context).textTheme.subtitle2))),
@@ -45,7 +45,7 @@ class TwitterWidget extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        constraints: const BoxConstraints.tightFor(width: TWITTER_LIST_WIDTH - 80),
+                        constraints: const BoxConstraints.tightFor(width: twitterListWidth - 80),
                         margin: const EdgeInsets.only(left: 2),
                         child: Linkify(
                           text: tweet.text,

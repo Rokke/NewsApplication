@@ -32,7 +32,7 @@ class RSSHead {
           if (!await feedProvider.findFeedToUpdate()) await read(providerTweetHeader).checkAndUpdateTweet(isAuto: true);
         } catch (err) {
           _log.severe('Monitor error', err);
-          stopMonitoring(false);
+          stopMonitoring();
         } finally {
           busy = false;
         }
@@ -45,7 +45,7 @@ class RSSHead {
   // Future<bool> findTweetToUpdate() async {
   // }
 
-  void stopMonitoring(bool ignoreProvider) {
+  void stopMonitoring({bool ignoreProvider = false}) {
     debugPrint('stopMonitoring($ignoreProvider)');
     _timer?.cancel();
     _timer = null;
@@ -59,7 +59,7 @@ final rssProvider = Provider<RSSHead>((ref) {
   final rssHead = RSSHead(ref.read);
   ref.onDispose(() {
     debugPrint('onDispose');
-    rssHead.stopMonitoring(true);
+    rssHead.stopMonitoring(ignoreProvider: true);
   });
   return rssHead;
 });

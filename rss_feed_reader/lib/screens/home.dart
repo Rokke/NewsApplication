@@ -41,6 +41,8 @@ final applicationVersionProvider = FutureProvider<PackageInfo>((ref) {
 // }
 
 class HomeScreen extends ConsumerWidget {
+  const HomeScreen({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     PackageInfo.fromPlatform().then((appVersion) => debugPrint('Future: ${appVersion.appName}-${appVersion.buildNumber}-${appVersion.packageName}-${appVersion.version}'));
@@ -69,7 +71,7 @@ class HomeScreen extends ConsumerWidget {
                     child: Stack(
                       children: [
                         DetailWidget(),
-                        Positioned(right: 0, bottom: 15, child: Container(constraints: BoxConstraints.tightFor(width: TwitterWidget.TWITTER_LIST_WIDTH, height: constraints.maxHeight - constraints.maxHeight / 3 - 60), child: const TwitterWidget())),
+                        Positioned(right: 0, bottom: 15, child: Container(constraints: BoxConstraints.tightFor(width: TwitterWidget.twitterListWidth, height: constraints.maxHeight - constraints.maxHeight / 3 - 60), child: const TwitterWidget())),
                       ],
                     ),
                   )

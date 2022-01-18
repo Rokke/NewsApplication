@@ -14,7 +14,7 @@ import 'package:rss_feed_reader/utils/misc_functions.dart';
 final providerTweetHeader = Provider<TweetListHeader>((ref) {
   return TweetListHeader(ref.read);
 });
-const int TWITTER_CHECKINTERVAL = 600000;
+const int twitterCheckInterval = 600000;
 
 class TweetListHeader {
   static final _log = Logger('TweetListHeader');
@@ -81,23 +81,27 @@ class TweetListHeader {
   }
 
   Future<bool> checkAndUpdateTweet({bool isAuto = false}) async {
-    final tweetUser = tweetUsers.fold(
-      null,
-      (TweetUserEncode? previousValue, element) => previousValue == null
-          ? element
-          : element.id != null && element.lastCheck < previousValue.lastCheck
-              ? element
-              : previousValue,
-    );
-    if (tweetUser?.id != null) {
-      if (tweetUser!.lastCheck + TWITTER_CHECKINTERVAL < DateTime.now().millisecondsSinceEpoch) {
-        await refreshTweetsFromUser(tweetUser, isAuto: isAuto);
-        return true;
+    if (twitterBearerToken.isNotEmpty) {
+      final tweetUser = tweetUsers.fold(
+        null,
+        (TweetUserEncode? previousValue, element) => previousValue == null
+            ? element
+            : element.id != null && element.lastCheck < previousValue.lastCheck
+                ? element
+                : previousValue,
+      );
+      if (tweetUser?.id != null) {
+        if (tweetUser!.lastCheck + twitterCheckInterval < DateTime.now().millisecondsSinceEpoch) {
+          await refreshTweetsFromUser(tweetUser, isAuto: isAuto);
+          return true;
+        } else {
+          _log.fine('No need to update twitter: $tweetUser');
+        }
       } else {
-        _log.fine('No need to update twitter: $tweetUser');
+        _log.warning('checkAndUpdateTweet()-illegal tweet: $tweetUser');
       }
     } else {
-      _log.warning('checkAndUpdateTweet()-illegal tweet: $tweetUser');
+      _log.warning('checkAndUpdateTweet()-illegal bearer');
     }
     return false;
   }
@@ -106,7 +110,7 @@ class TweetListHeader {
     assert(tweetUserData.id != null, 'Invalid tweetUser: $tweetUserData');
     final url = 'https://api.twitter.com/2/users/${tweetUserData.tweetUserId}/tweets?user.fields=id,username,name,profile_image_url&expansions=referenced_tweets.id.author_id&tweet.fields=created_at&exclude=replies' + (tweetUserData.sinceId > 0 ? '&since_id=${tweetUserData.sinceId}' : '');
     _log.info('fetchUserTweets($tweetUserData):$url');
-    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $TWITTER_BEARER_TOKEN'});
+    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'});
     if (response != null && response['data'] is List) {
       return TweetFullDecode(response, tweetUserData);
     }
@@ -131,7 +135,7 @@ class TweetListHeader {
     _log.fine('fetchTweetUsername($id, $username)');
     assert(id != null || username != null, 'fetchTweetUsername-id or username must be valid');
     final url = 'https://api.twitter.com/2/users/${id ?? "by/username/$username"}?user.fields=profile_image_url';
-    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $TWITTER_BEARER_TOKEN'});
+    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'});
     if (response != null && response['data'] != null) {
       try {
         _log.info('fetchTweetUsername()-Adding user: ${response['data']}');
@@ -157,7 +161,7 @@ class TweetListHeader {
         tweetUser.sinceId = lastId;
         final db = _read(rssDatabase);
         (db.update(db.tweetUser)..where((tbl) => tbl.tweetUserId.equals(tweetUser.tweetUserId))).write(TweetUserCompanion(sinceId: Value(lastId))).then((value) => debugPrint('Updated db: $value'));
-        if (!hadTweets) playSound(soundFile: SOUND_FILE.SOUND_NEWTWEET);
+        if (!hadTweets) playSound(soundFile: SOUND_FILE.soundNewTweet);
       } else {
         debugPrint('since_id, no update: $lastId');
       }

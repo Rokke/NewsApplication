@@ -18,14 +18,17 @@ class SettingsScreen extends ConsumerWidget {
     txtLogpath.text = config.logFilepath;
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: Column(
-        children: [
-          TextField(controller: txtSecret, decoration: const InputDecoration(labelText: 'Server secret')),
-          const SizedBox(height: 20),
-          TextField(controller: txtLogpath, decoration: const InputDecoration(labelText: 'Logpath')),
-          const Flexible(child: SizedBox()),
-          ElevatedButton(onPressed: () => _save(context, config, txtSecret.text, txtLogpath.text), child: const Text('Save')),
-        ],
+      body: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            TextField(controller: txtSecret, decoration: const InputDecoration(labelText: 'Server secret')),
+            const SizedBox(height: 20),
+            TextField(controller: txtLogpath, decoration: const InputDecoration(labelText: 'Logpath')),
+            const Expanded(child: SizedBox()),
+            ElevatedButton(onPressed: () => _save(context, config, txtSecret.text, txtLogpath.text), child: const Text('Save')),
+          ],
+        ),
       ),
     );
   }

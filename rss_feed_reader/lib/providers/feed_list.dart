@@ -23,7 +23,7 @@ class FeedListHeader {
   // final List<int> readIds = [];
   List<ArticleEncode> articles = [];
   List<FeedEncode> feeds = [];
-  int status = ArticleTableStatus.UNREAD;
+  int status = ArticleTableStatus.unread;
   int? _lastRemovedId;
   final hasUndoItem = ValueNotifier(false);
   ValueNotifier<bool> isInitialized = ValueNotifier(false);
@@ -136,7 +136,7 @@ class FeedListHeader {
       final updateId = _lastRemovedId!;
       _lastRemovedId = null;
       hasUndoItem.value = false;
-      db.updateArticleStatus(articleId: updateId, status: ArticleTableStatus.UNREAD).then((value) async {
+      db.updateArticleStatus(articleId: updateId, status: ArticleTableStatus.unread).then((value) async {
         final articleData = await db.fetchSingleArticle(articleId: updateId);
         if (articleData != null) {
           await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
@@ -238,7 +238,7 @@ class FeedListHeader {
           updatedFeed.activeArticles.removeAt(indexToRemove);
         }
         await db.removeActiveStatus(batchIds);
-        if (!hasFeeds && newArticles > 0) playSound(soundFile: SOUND_FILE.SOUND_NEWITEM, log: _log);
+        if (!hasFeeds && newArticles > 0) playSound(soundFile: SOUND_FILE.soundNewItem, log: _log);
         _log.info('Still active: ${updatedFeed.activeArticles.map((e) => e.id).join(",")}, new: $newArticles');
       } else {
         feed?.lastCheck = DateTime.now().millisecondsSinceEpoch;
@@ -279,13 +279,13 @@ class FeedListHeader {
     articles.removeAt(index);
   }
 
-  void changeArticleStatusByIndex({required int index, int newStatus = ArticleTableStatus.READ}) {
+  void changeArticleStatusByIndex({required int index, int newStatus = ArticleTableStatus.read}) {
     assert(index >= 0, 'changeArticleStatusByIndex($index, $newStatus)-Invalid index');
     try {
       changeSelectedArticle = -1;
       _log.info('changeArticleStatus-remove(${articles[index].id}, $index, $newStatus)');
       db.updateArticleStatus(articleId: articles[index].id, status: newStatus);
-      if (newStatus == ArticleTableStatus.READ) {
+      if (newStatus == ArticleTableStatus.read) {
         _lastRemovedId = articles[index].id;
         hasUndoItem.value = true;
         _removeArticleFromList(articles[index], index);
@@ -297,7 +297,7 @@ class FeedListHeader {
     }
   }
 
-  void changeArticleStatusById({required int id, int newStatus = ArticleTableStatus.READ}) {
+  void changeArticleStatusById({required int id, int newStatus = ArticleTableStatus.read}) {
     assert(id > 0, 'changeArticleStatusById($id, $newStatus)');
     _log.info('changeArticleStatusById($id, $newStatus)');
     final foundIndex = articles.indexWhere((element) => element.id == id);

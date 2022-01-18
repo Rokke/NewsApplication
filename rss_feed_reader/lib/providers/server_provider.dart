@@ -11,10 +11,10 @@ import 'package:rss_feed_reader/providers/config_provider.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 
-const DEFAULT_PORT = kDebugMode ? 3344 : 3344;
-const _SOCKET_HEADHELLO = 'CONNECTED:';
-const _SOCKET_VERSION = '1.0';
-const CODE_ALREADY_CONNECTED = -99;
+const defaultPort = kDebugMode ? 3344 : 3344;
+const socketHeadHello = 'CONNECTED:';
+const socketVersion = '1.0';
+const codeAlreadyConnected = -99;
 const blockedIP = ['45.'];
 
 final providerSocketServer = Provider<SocketServerHandler>((ref) {
@@ -37,7 +37,7 @@ class SocketServerHandler {
   Socket? _clientSocket;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
   String get clientIP => _clientSocket?.remoteAddress.address ?? '?';
-  SocketServerHandler(this.read, {this.port = DEFAULT_PORT, required String secret}) : _secret = secret {
+  SocketServerHandler(this.read, {this.port = defaultPort, required String secret}) : _secret = secret {
     _startListener();
   }
   Future<void> _startListener() async {
@@ -87,14 +87,14 @@ class SocketServerHandler {
         _clientSocket = socket;
         _log.info('_newConnection(${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort})');
         _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
-        _clientSocket?.write('$_SOCKET_HEADHELLO$_SOCKET_VERSION');
-        debugPrint('SENT: $_SOCKET_HEADHELLO$_SOCKET_VERSION');
+        _clientSocket?.write('$socketHeadHello$socketVersion');
+        debugPrint('SENT: $socketHeadHello$socketVersion');
         isConnected.value = _clientSocket != null;
         _clientSocket?.flush();
       }
     } else {
       _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Someone is already connected so ignoring');
-      _clientSendData({'code': CODE_ALREADY_CONNECTED, 'data': 'already connected'}, socket: socket);
+      _clientSendData({'code': codeAlreadyConnected, 'data': 'already connected'}, socket: socket);
       socket.destroy();
     }
   }
@@ -184,13 +184,13 @@ class SocketServerHandler {
     final utfString = utf8.decode(data);
     _log.info('_clientDataReceived($utfString)');
     if (isConnected.value == false || clientVersion.isEmpty) {
-      if (utfString.startsWith(_SOCKET_HEADHELLO) && utfString.endsWith('.$_secret')) {
-        clientVersion = utfString.split('$_SOCKET_HEADHELLO:').last.split('.').first;
+      if (utfString.startsWith(socketHeadHello) && utfString.endsWith('.$_secret')) {
+        clientVersion = utfString.split('$socketHeadHello:').last.split('.').first;
         isConnected.value = _clientSocket != null;
         debugPrint('Connected: $clientVersion, ${isConnected.value}');
         _selectAndSendFeed();
       } else {
-        debugPrint('Invalid client request: "$utfString" != "$_SOCKET_HEADHELLO"');
+        debugPrint('Invalid client request: "$utfString" != "$socketHeadHello"');
         _log.warning('_newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid header. Stopping server - $utfString');
         _closeClient();
         isConnected.value = null;

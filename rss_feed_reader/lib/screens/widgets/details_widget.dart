@@ -63,19 +63,19 @@ class DetailWidget extends ConsumerWidget {
                                 IconButton(
                                   icon: Icon(
                                     Icons.favorite,
-                                    color: feedProvider.status == ArticleTableStatus.FAVORITE ? Colors.red : null,
+                                    color: feedProvider.status == ArticleTableStatus.favorite ? Colors.red : null,
                                   ),
                                   onPressed: () {
-                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.FAVORITE ? ArticleTableStatus.FAVORITE : ArticleTableStatus.UNREAD);
+                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.favorite ? ArticleTableStatus.favorite : ArticleTableStatus.unread);
                                   },
                                 ),
                                 IconButton(
                                   icon: Icon(
-                                    feedProvider.status == ArticleTableStatus.READ ? Icons.visibility_off : Icons.visibility,
-                                    color: feedProvider.status == ArticleTableStatus.READ ? Colors.green : null,
+                                    feedProvider.status == ArticleTableStatus.read ? Icons.visibility_off : Icons.visibility,
+                                    color: feedProvider.status == ArticleTableStatus.read ? Colors.green : null,
                                   ),
                                   onPressed: () {
-                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.READ ? ArticleTableStatus.READ : ArticleTableStatus.UNREAD);
+                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.read ? ArticleTableStatus.read : ArticleTableStatus.unread);
                                   },
                                 ),
                               ],
@@ -85,7 +85,7 @@ class DetailWidget extends ConsumerWidget {
                       ),
                       Expanded(
                         child: Container(
-                          padding: const EdgeInsets.only(left: 5, right: TwitterWidget.TWITTER_LIST_WIDTH - 30, top: 5, bottom: 5),
+                          padding: const EdgeInsets.only(left: 5, right: TwitterWidget.twitterListWidth - 30, top: 5, bottom: 5),
                           child: FutureBuilder(
                             future: feedProvider.selectedArticle!.articleDescription(ref.read(rssDatabase)),
                             initialData: null,

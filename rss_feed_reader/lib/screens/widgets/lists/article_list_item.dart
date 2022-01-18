@@ -10,7 +10,7 @@ class ArticleListItem extends ConsumerWidget {
   final ArticleEncode article;
   final Function() onRemoveArticle;
   final Function() onSelectedArticle;
-  const ArticleListItem({required this.article, required this.onRemoveArticle, required this.onSelectedArticle});
+  const ArticleListItem({Key? key, required this.article, required this.onRemoveArticle, required this.onSelectedArticle}) : super(key: key);
 
   static Widget articleContainer(BuildContext context, ArticleEncode article, {Function()? onRemoveArticle, bool isSelected = false, Function()? onSelectedArticle}) => Container(
         decoration: BoxDecoration(color: isSelected ? Colors.blue[900] : Colors.blue, borderRadius: BorderRadius.circular(10)),

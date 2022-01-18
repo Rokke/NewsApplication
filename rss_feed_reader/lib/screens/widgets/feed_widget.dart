@@ -100,7 +100,7 @@ class FeedView extends ConsumerWidget {
                       right: 0,
                       bottom: 0,
                       child: Hero(
-                        tag: AddFeedPopup.HERO_TAG,
+                        tag: AddFeedPopup.heroTag,
                         child: Material(
                           child: SingleChildScrollView(
                             child: ElevatedButton.icon(

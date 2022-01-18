@@ -15,7 +15,7 @@ class MonitorButton extends ConsumerWidget {
         if (!running) {
           ref.read(rssProvider).startMonitoring();
         } else {
-          ref.read(rssProvider).stopMonitoring(false);
+          ref.read(rssProvider).stopMonitoring();
         }
       },
     );

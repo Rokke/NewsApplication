@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/config_provider.dart';
 
-const _SOCKET_HEADHELLO = 'CONNECTED:';
-const _SOCKET_VERSION = '1.0';
+const socketHeadHello = 'CONNECTED:';
+const socketVersion = '1.0';
 
 final providerSocket = Provider((ref) {
   NetworkInterface.list().then((value) {
@@ -29,16 +29,16 @@ final providerSocket = Provider((ref) {
 });
 
 class SocketProvider {
-  String _secret;
+  final String _secret;
   SocketProvider({required this.serverAddresses, required String secret, this.port = kDebugMode ? 3344 : 3344, this.autoConnectTimer = 50000}) : _secret = secret {
     assert(autoConnectTimer == 0 || autoConnectTimer > 1000, 'The autoConnectTimer must be >= 1000ms');
     _autoConnectTimer = autoConnectTimer;
     if (isValid) _autoConnect();
   }
-  bool get isValid => this.serverAddresses.isNotEmpty && _secret.isNotEmpty;
-  bool get isConnected => status.value == SocketStatus.CONNECTED || status.value == SocketStatus.CONNECTED_NOTRUNNING || status.value == SocketStatus.CONNECTED_RUNNING;
-  bool get isDisconnected => status.value == SocketStatus.DISCONNECTED;
-  ValueNotifier<SocketStatus> status = ValueNotifier(SocketStatus.DISCONNECTED);
+  bool get isValid => serverAddresses.isNotEmpty && _secret.isNotEmpty;
+  bool get isConnected => status.value == SocketStatus.connected || status.value == SocketStatus.connectedNotRunning || status.value == SocketStatus.connectedRunning;
+  bool get isDisconnected => status.value == SocketStatus.disconnected;
+  ValueNotifier<SocketStatus> status = ValueNotifier(SocketStatus.disconnected);
   List<String> serverAddresses;
   int indexServerTest = 0;
   int dataLength = 0;
@@ -68,10 +68,10 @@ class SocketProvider {
       connectedAddress = null;
       try {
         debugPrint('connect: $serverAddresses, $_secret');
-        status.value = SocketStatus.WAITING;
+        status.value = SocketStatus.waiting;
         try {
           if (indexServerTest >= serverAddresses.length) indexServerTest = 0;
-          _client = await Socket.connect(serverAddresses[indexServerTest++], port, timeout: Duration(milliseconds: 2400));
+          _client = await Socket.connect(serverAddresses[indexServerTest++], port, timeout: const Duration(milliseconds: 2400));
         } on SocketException catch (err) {
           debugPrint('SocketConnection error: $port, $err, $_client');
         }
@@ -85,7 +85,7 @@ class SocketProvider {
         debugPrint('Err connecting: $err');
       }
     }
-    status.value = SocketStatus.DISCONNECTED;
+    status.value = SocketStatus.disconnected;
     _autoConnectTimer = indexServerTest >= serverAddresses.length ? autoConnectTimer : 1000;
     _autoConnect();
     return false;
@@ -102,15 +102,15 @@ class SocketProvider {
     debugPrint('onData init: ${data.length} bytes-${status.value}');
     final utfString = utf8.decode(data);
     // debugPrint('onData init: $utfString');
-    if (status.value == SocketStatus.WAITING) {
+    if (status.value == SocketStatus.waiting) {
       // final utfString = utf8.decode(data);
-      if (utfString.startsWith('$_SOCKET_HEADHELLO')) {
-        _serverVersion = utfString.split('$_SOCKET_HEADHELLO').last;
-        _client!.write('$_SOCKET_HEADHELLO:$_SOCKET_VERSION.$_secret');
+      if (utfString.startsWith(socketHeadHello)) {
+        _serverVersion = utfString.split(socketHeadHello).last;
+        _client!.write('$socketHeadHello:$socketVersion.$_secret');
         _client!.flush();
-        status.value = SocketStatus.CONNECTED;
+        status.value = SocketStatus.connected;
       } else {
-        debugPrint('Invalid client request: "$utfString" != "$_SOCKET_HEADHELLO"');
+        debugPrint('Invalid client request: "$utfString" != "$socketHeadHello"');
         _closeConnection();
       }
     } else {
@@ -126,8 +126,9 @@ class SocketProvider {
       if (dataToParse.length == dataLength) {
         dataLength = 0;
         _parseData();
-      } else
+      } else {
         debugPrint('_onData will continue: $dataLength - ${dataToParse.length}');
+      }
     }
   }
 
@@ -148,9 +149,11 @@ class SocketProvider {
     debugPrint('parse!');
     // debugPrint('OBJ: ${jsonDecode(utfString)}');
     final response = SocketResponse.fromJson(jsonDecode(utfString));
-    if (response.running == true)
-      status.value = SocketStatus.CONNECTED_RUNNING;
-    else if (response.running == false) status.value = SocketStatus.CONNECTED_NOTRUNNING;
+    if (response.running == true) {
+      status.value = SocketStatus.connectedRunning;
+    } else if (response.running == false) {
+      status.value = SocketStatus.connectedNotRunning;
+    }
     _streamController.sink.add(response);
     // }
   }
@@ -188,8 +191,8 @@ class SocketProvider {
     _client = null;
     _serverVersion = '';
     debugPrint('disconnected');
-    status.value = SocketStatus.DISCONNECTED;
+    status.value = SocketStatus.disconnected;
   }
 }
 
-enum SocketStatus { DISCONNECTED, CONNECTED, CONNECTED_RUNNING, CONNECTED_NOTRUNNING, WAITING }
+enum SocketStatus { disconnected, connected, connectedRunning, connectedNotRunning, waiting }

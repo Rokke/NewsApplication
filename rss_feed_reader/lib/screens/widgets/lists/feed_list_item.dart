@@ -16,7 +16,7 @@ import 'package:rss_feed_reader/utils/popup_card.dart';
 //   return db.numberOfArticlesStatus(id, ref.watch(filterShowArticleStatus).state).watchSingle();
 // });
 
-const MENU_ITEMS = [
+const menuItems = [
   {'text': 'Oppdater RSS', 'icon': Icons.refresh, 'value': 'update'},
   {'text': 'Endre RSS', 'icon': Icons.edit, 'value': 'edit'},
   {'text': 'Merk alle lest', 'icon': Icons.visibility, 'value': 'read'},
@@ -27,7 +27,7 @@ class FeedListItem extends ConsumerWidget {
   // static final _log = Logger('FeedListItem');
   final FeedEncode feed;
   final bool isSelected;
-  const FeedListItem({required this.feed, this.isSelected = false});
+  const FeedListItem({Key? key, required this.feed, this.isSelected = false}) : super(key: key);
 
   static Widget feedContainer(BuildContext context, Reader read, FeedEncode feed, {bool isSelected = false}) {
     final isLoading = ValueNotifier(false);
@@ -47,7 +47,7 @@ class FeedListItem extends ConsumerWidget {
                 child: loading
                     ? const CircularProgressIndicator()
                     : PopupMenuButton(
-                        itemBuilder: (_) => MENU_ITEMS
+                        itemBuilder: (_) => menuItems
                             .map(
                               (e) => PopupMenuItem(
                                 value: e['value'],

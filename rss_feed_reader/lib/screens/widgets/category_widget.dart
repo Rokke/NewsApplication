@@ -44,7 +44,7 @@ class CategoryWidget extends ConsumerWidget {
               }
             },
             child: Hero(
-              tag: '${CategoryPopup.HERO_TAG}$articleId$categoryName',
+              tag: '${CategoryPopup.heroTag}$articleId$categoryName',
               child: Material(
                 color: backgroundColor,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

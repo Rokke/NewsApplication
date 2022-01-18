@@ -6,7 +6,7 @@ import 'package:rss_feed_reader/providers/tweet_list.dart';
 // const static YOUTUBE_RSS_URL='https://www.youtube.com/feeds/videos.xml?channel_id=';
 class AddFeedPopup extends ConsumerWidget {
   const AddFeedPopup({Key? key}) : super(key: key);
-  static const HERO_TAG = 'popupHeroAddFeed';
+  static const heroTag = 'popupHeroAddFeed';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -15,7 +15,7 @@ class AddFeedPopup extends ConsumerWidget {
       child: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Hero(
-          tag: HERO_TAG,
+          tag: heroTag,
           child: Material(
             color: Colors.purple,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

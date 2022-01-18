@@ -39,18 +39,20 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [providerConfig.overrideWithValue(appConfig)],
-      child: MyApp(),
+      child: const MyApp(),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       theme: ThemeData(primarySwatch: Colors.deepPurple, brightness: Brightness.dark, appBarTheme: AppBarTheme(backgroundColor: Colors.deepPurple[900]), cardColor: Colors.blue[900]),
       themeMode: ThemeMode.dark,
-      home: HomeScreen(),
+      home: const HomeScreen(),
     );
   }
 }

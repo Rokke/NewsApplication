@@ -57,7 +57,7 @@ class AppDb extends _$AppDb {
     return -1;
   }
 
-  Future<int> markAllRead(int feedId) => (update(article)..where((tbl) => tbl.parent.equals(feedId))).write(const ArticleCompanion(status: Value(ArticleTableStatus.READ)));
+  Future<int> markAllRead(int feedId) => (update(article)..where((tbl) => tbl.parent.equals(feedId))).write(const ArticleCompanion(status: Value(ArticleTableStatus.read)));
   Future<FeedData?> fetchFeed(int id) => (select(feed)..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
   Future<List<FeedData>> feeds() => (select(feed)
         // ..where((tbl) => tbl.status.isSmallerOrEqualValue( ArticleTableStatus.READ))
@@ -69,15 +69,15 @@ class AppDb extends _$AppDb {
     return into(article).insert(articleCompanion);
   }
 
-  Future<int> updateArticleStatus({required int articleId, int status = ArticleTableStatus.READ}) => (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(status: Value(status)));
+  Future<int> updateArticleStatus({required int articleId, int status = ArticleTableStatus.read}) => (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(status: Value(status)));
   Future<List<ArticleData>> fetchActiveArticles(int feedId) async => (select(article)..where((tbl) => tbl.parent.equals(feedId) & tbl.active.equals(true))).get();
-  Future<List<ArticleData>> articles({int? feedId, int status = ArticleTableStatus.UNREAD}) => (feedId == null
+  Future<List<ArticleData>> articles({int? feedId, int status = ArticleTableStatus.unread}) => (feedId == null
           ? (select(article)
             ..where((tbl) => tbl.status.equals(status))
-            ..orderBy([(tbl) => status == ArticleTableStatus.READ ? OrderingTerm.desc(tbl.pubDate) : OrderingTerm.asc(tbl.pubDate)]))
+            ..orderBy([(tbl) => status == ArticleTableStatus.read ? OrderingTerm.desc(tbl.pubDate) : OrderingTerm.asc(tbl.pubDate)]))
           : (select(article)
             ..where((tbl) => tbl.parent.equals(feedId) & tbl.status.equals(status))
-            ..orderBy([(tbl) => status == ArticleTableStatus.READ ? OrderingTerm.desc(tbl.pubDate) : OrderingTerm.asc(tbl.pubDate)])))
+            ..orderBy([(tbl) => status == ArticleTableStatus.read ? OrderingTerm.desc(tbl.pubDate) : OrderingTerm.asc(tbl.pubDate)])))
       .get();
 
   Future<ArticleData?> fetchSingleArticle({required int articleId}) => (select(article)..where((tbl) => tbl.id.equals(articleId))).getSingleOrNull();
@@ -90,7 +90,7 @@ class AppDb extends _$AppDb {
   Stream<CategoryData?> fetchCategoryByName({required String categoryName}) => (select(category)..where((tbl) => tbl.name.equals(categoryName))).watchSingleOrNull();
   // numberOfUnreadArticles() => article.id.count(filter: article.status.equals(0) | article.status.equals(null));
   Stream<List<TweetUserData>> tweetUsers() => (select(tweetUser)..orderBy([(tbl) => OrderingTerm.asc(tbl.username)])).watch();
-  Future<List<TweetData>> tweets({int status = TweetTableStatus.UNREAD}) => (select(tweet)
+  Future<List<TweetData>> tweets({int status = TweetTableStatus.unread}) => (select(tweet)
         ..where((tbl) => tbl.status.equals(status))
         ..orderBy([(tbl) => OrderingTerm.asc(tbl.tweetId)]))
       .get();
@@ -136,7 +136,7 @@ class AppDb extends _$AppDb {
 
   // Future<int> insertTweet(TweetCompanion tweetCompanion) async => into(tweet).insert(tweetCompanion);
   // Future<int> updateTweetStatus({required int id, int status = ArticleTableStatus.READ}) => (update(tweet)..where((tbl) => tbl.id.equals(id))).write(TweetCompanion(status: Value(status)));
-  Future<int> updateTweetStatus(int id) => (update(tweet)..where((tbl) => tbl.tweetId.equals(id))).write(const TweetCompanion(status: Value(TweetTableStatus.READ)));
+  Future<int> updateTweetStatus(int id) => (update(tweet)..where((tbl) => tbl.tweetId.equals(id))).write(const TweetCompanion(status: Value(TweetTableStatus.read)));
   Future<TweetUserData?> fetchTweetUser(int id) => (select(tweetUser)..where((tbl) => tbl.id.equals(id))).getSingleOrNull();
   // Stream<List<TweetData>> tweets() => select(tweet).watch();
   // extractJSON(String filename) async {
@@ -151,8 +151,8 @@ class AppDb extends _$AppDb {
   /// @param deleteTweets specifies to delete read tweets, default true
   /// @returns The number or rows deleted
   Future<int> cleanOldData({bool deleteArticles = true, bool deleteTweets = true}) async {
-    final articlesDeleted = deleteArticles ? await (delete(article)..where((tbl) => tbl.status.equals(ArticleTableStatus.READ) & tbl.active.equals(false))).go() : 0;
-    return articlesDeleted + (deleteTweets ? await (delete(tweet)..where((tbl) => tbl.status.equals(TweetTableStatus.READ))).go() : 0);
+    final articlesDeleted = deleteArticles ? await (delete(article)..where((tbl) => tbl.status.equals(ArticleTableStatus.read) & tbl.active.equals(false))).go() : 0;
+    return articlesDeleted + (deleteTweets ? await (delete(tweet)..where((tbl) => tbl.status.equals(TweetTableStatus.read))).go() : 0);
   }
 
   // Future<int> deleteAllReadArticles({int? feedId}) =>

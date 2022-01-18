@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 
 class HomePage extends ConsumerStatefulWidget {
-  HomePage({Key? key}) : super(key: key);
+  const HomePage({Key? key}) : super(key: key);
 
   @override
   _HomePageState createState() => _HomePageState();
@@ -40,15 +40,23 @@ class _HomePageState extends ConsumerState<HomePage> {
                     });
                     socketProvider.clientSendData({'command': showFeeds ? 'feed' : 'tweet'});
                   },
-                  icon: Icon(Icons.refresh)),
+                  icon: const Icon(Icons.refresh)),
               Text(showFeeds ? 'RSS news' : 'Tweet news'),
             ],
           ),
           actions: [
-            if (socketProvider.isConnected) IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: Icon(Icons.skip_previous)),
-            if (socketProvider.isConnected) IconButton(onPressed: () => url.isNotEmpty ? launchURL(url) : null, icon: Icon(Icons.open_in_browser)),
-            if (socketProvider.isConnected) IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: Icon(Icons.skip_next)) else if (status == SocketStatus.WAITING) CircularProgressIndicator() else Icon(Icons.no_cell, color: Colors.red),
-            if (status == SocketStatus.CONNECTED_NOTRUNNING) IconButton(onPressed: () => socketProvider.clientSendData({'command': 'start_monitor'}), icon: Icon(Icons.play_arrow_sharp, color: Colors.red)) else if (status == SocketStatus.CONNECTED_RUNNING) Icon(Icons.check, color: Colors.green),
+            if (socketProvider.isConnected) IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: const Icon(Icons.skip_previous)),
+            if (socketProvider.isConnected) IconButton(onPressed: () => url.isNotEmpty ? launchURL(url) : null, icon: const Icon(Icons.open_in_browser)),
+            if (socketProvider.isConnected)
+              IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: const Icon(Icons.skip_next))
+            else if (status == SocketStatus.waiting)
+              const CircularProgressIndicator()
+            else
+              const Icon(Icons.no_cell, color: Colors.red),
+            if (status == SocketStatus.connectedNotRunning)
+              IconButton(onPressed: () => socketProvider.clientSendData({'command': 'start_monitor'}), icon: const Icon(Icons.play_arrow_sharp, color: Colors.red))
+            else if (status == SocketStatus.connectedRunning)
+              const Icon(Icons.check, color: Colors.green),
             IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen())), icon: const Icon(Icons.settings)),
           ],
         ),
@@ -67,7 +75,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Container(
-                              padding: EdgeInsets.all(4),
+                              padding: const EdgeInsets.all(4),
                               color: Theme.of(context).primaryColor,
                               child: Center(
                                 child: Text(
@@ -89,7 +97,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                           style: Theme.of(context).textTheme.headline6,
                                         ))
                             else
-                              Expanded(child: Center(child: Text('No description'))),
+                              const Expanded(child: Center(child: Text('No description'))),
                             Container(
                               color: Theme.of(context).bottomAppBarColor,
                               child: Row(children: [
@@ -105,7 +113,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                             errorWidget: (_, __, ___) => Container(),
                                           )
                                         : Container()),
-                                Container(
+                                SizedBox(
                                   width: width,
                                   child: Center(
                                     child: ElevatedButton(
@@ -114,7 +122,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                       child: Container(
                                         width: 100,
                                         decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-                                        child: Icon(
+                                        child: const Icon(
                                           Icons.delete,
                                           color: Colors.white,
                                           size: 30,
@@ -127,7 +135,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                     constraints: BoxConstraints.tightFor(height: 40, width: width),
                                     alignment: Alignment.centerRight,
                                     child: Container(
-                                      padding: EdgeInsets.symmetric(horizontal: 8),
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
                                       alignment: Alignment.center,
                                       color: Theme.of(context).disabledColor,
                                       height: 40,
@@ -165,15 +173,15 @@ class _HomePageState extends ConsumerState<HomePage> {
                                 : 'Unknown type',
                         style: Theme.of(context).textTheme.headline3,
                       ));
-                    } else
-                      return Container(child: Text('No data'));
-                  } else
-                    return Container(
-                      child: Text('No snapshot'),
-                    );
+                    } else {
+                      return const Text('No data');
+                    }
+                  } else {
+                    return const Text('No snapshot');
+                  }
                 },
               )
-            : IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen())), icon: const Icon(Icons.settings)),
+            : const Center(child: Text('Konfigurer leser')),
       ),
     );
   }

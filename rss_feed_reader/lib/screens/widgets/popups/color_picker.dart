@@ -6,7 +6,7 @@ class CategoryPopup extends StatelessWidget {
   final CategoryData category;
   final int id;
   const CategoryPopup(this.id, this.category, {Key? key}) : super(key: key);
-  static const HERO_TAG = 'popupHeroCategoryPopup';
+  static const heroTag = 'popupHeroCategoryPopup';
 
   @override
   Widget build(BuildContext context) {
@@ -15,7 +15,7 @@ class CategoryPopup extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Hero(
-          tag: '$HERO_TAG$id${category.name}',
+          tag: '$heroTag$id${category.name}',
           child: Material(
             color: Colors.purple,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

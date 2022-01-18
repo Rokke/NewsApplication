@@ -153,7 +153,7 @@ class TweetFullDecode {
 }
 
 abstract class TweetTableStatus {
-  static const READ = -1;
-  static const UNREAD = 0;
-  static const RETWEET = 1;
+  static const read = -1;
+  static const unread = 0;
+  static const retweet = 1;
 }

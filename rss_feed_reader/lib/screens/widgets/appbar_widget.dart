@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:rss_feed_reader/providers/config_provider.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/providers/server_provider.dart';
 import 'package:rss_feed_reader/screens/settings_screen.dart';
@@ -17,7 +16,7 @@ class CustomAppBarWidget extends ConsumerWidget {
   Future<void> _test(BuildContext context) async {
     debugPrint('_test()');
     try {
-      playSound(soundFile: SOUND_FILE.SOUND_NEWITEM);
+      playSound(soundFile: SOUND_FILE.soundNewItem);
       // debugPrint('checkAndUpdateTweet: ${await context.read(providerTweetHeader).checkAndUpdateTweet()}');
     } catch (err) {
       debugPrint('Error: $err');

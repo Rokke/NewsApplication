@@ -5,6 +5,8 @@ Reader that shows you RSS feeds and tweets (with quotes and retweet) from gived 
 ## Getting Started
 
 When starting it up you can add the RSS feeds and/or tweet users that you want to follow.
+You must create a secret.dart file with a tweeter bearer like "const twitterBearerToken = 'bearerToken';"
+Check: "https://developer.twitter.com/en/docs/authentication/oauth-2-0/bearer-tokens"
 
 ### Version 1.1.0
 

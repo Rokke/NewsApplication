@@ -3,7 +3,7 @@ import 'package:news_common/news_common.dart';
 
 class FeedEncodeBase {
   FeedEncodeBase({required this.title, required this.url, required this.ttl, required this.lastCheck, required this.lastBuildDate, required this.pubDate, this.description, this.link, this.id, this.category, this.feedFav, this.language});
-  static const TTL_DEFAULT = 30;
+  static const ttlDefault = 30;
   int? id;
   final int lastBuildDate, pubDate;
   String title, url;
@@ -29,7 +29,7 @@ class FeedEncodeBase {
       );
     } catch (err) {
       debugPrint('ERR: $json');
-      throw err;
+      rethrow;
     }
   }
   Map<String, dynamic> toJson() => {
@@ -64,8 +64,11 @@ class FeedEncodeBase {
 
 class ArticleEncodeBase extends NewsItem {
   ArticleEncodeBase({required this.id, required this.parent, required this.title, required this.pubDate, required this.url, this.creator, this.description, this.encoded, this.category, required this.guid, this.active = true});
+  @override
   int id;
-  final String title, guid, url;
+  @override
+  final String title, url;
+  final String guid;
   final String? creator, encoded, category;
   String? description;
   final FeedEncodeBase parent;
@@ -90,7 +93,7 @@ class ArticleEncodeBase extends NewsItem {
       );
     } catch (err) {
       debugPrint('Err: $json');
-      throw err;
+      rethrow;
     }
   }
   Map<String, dynamic> toJson() => {

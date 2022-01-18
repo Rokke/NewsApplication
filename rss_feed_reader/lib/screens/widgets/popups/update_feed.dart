@@ -8,7 +8,7 @@ class UpdateFeedPopup extends ConsumerWidget {
   static final _log = Logger('UpdateFeedPopup');
   final FeedEncode feed;
   const UpdateFeedPopup(this.feed, {Key? key}) : super(key: key);
-  static const HERO_TAG = 'popupHeroUpdateFeed';
+  static const heroTag = 'popupHeroUpdateFeed';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,7 +23,7 @@ class UpdateFeedPopup extends ConsumerWidget {
       child: Padding(
         padding: const EdgeInsets.all(32.0),
         child: Hero(
-          tag: HERO_TAG + feed.id.toString(),
+          tag: heroTag + feed.id.toString(),
           child: Material(
             color: Colors.purple,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),

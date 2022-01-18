@@ -13,7 +13,7 @@ class FeedEncode extends FeedEncodeBase {
   factory FeedEncode.fromChannel(ChannelMapper channel, String url) => FeedEncode(
         title: channel.title!,
         url: url,
-        ttl: channel.ttl ?? FeedEncodeBase.TTL_DEFAULT,
+        ttl: channel.ttl ?? FeedEncodeBase.ttlDefault,
         lastCheck: DateTime.now().millisecondsSinceEpoch,
         lastBuildDate: channel.lastBuildDate ?? 0,
         pubDate: channel.pubDate ?? 0,
@@ -145,7 +145,7 @@ class FeedFullDecode {
 }
 
 abstract class ArticleTableStatus {
-  static const READ = -1;
-  static const UNREAD = 0;
-  static const FAVORITE = 1;
+  static const read = -1;
+  static const unread = 0;
+  static const favorite = 1;
 }

@@ -98,13 +98,13 @@ Future<void> playSound({required SOUND_FILE soundFile, Logger? log}) async {
   debugPrint('playSound func finished');
 }
 
-enum SOUND_FILE { SOUND_NEWTWEET, SOUND_NEWITEM }
+enum SOUND_FILE { soundNewTweet, soundNewItem }
 
 extension SoundPath on SOUND_FILE {
   String get _pathExtra => kDebugMode ? '' : 'data/flutter_assets/';
   String get path {
     switch (this) {
-      case SOUND_FILE.SOUND_NEWITEM:
+      case SOUND_FILE.soundNewItem:
         return '${_pathExtra}assets/sounds/article.wav';
       default:
         return '${_pathExtra}assets/sounds/twitter.wav';

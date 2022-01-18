@@ -1,9 +1,11 @@
-include: package:lint/analysis_options.yaml
+include: package:flutter_lints/flutter.yaml
+
+# include: package:lint/analysis_options.yaml
 linter:
-  rules:
-    prefer_interpolation_to_compose_strings: false
-    constant_identifier_names: false
-    avoid_multiple_declarations_per_line: false
+#   rules:
+#     prefer_interpolation_to_compose_strings: false
+#     constant_identifier_names: false
+#     avoid_multiple_declarations_per_line: false
 
 analyzer:
   exclude:
@@ -11,5 +13,4 @@ analyzer:
     - lib/generated_plugin_registrant.dart
   plugins:
     - moor
-
 #include: package:pedantic/analysis_options.yaml
