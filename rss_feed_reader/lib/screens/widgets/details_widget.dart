@@ -38,13 +38,17 @@ class DetailWidget extends ConsumerWidget {
                         color: Colors.blue[800],
                         padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Container(color: Colors.purple[900], padding: const EdgeInsets.all(4), child: Text('${feedProvider.selectedArticle!.id}')),
                             Flexible(
-                              child: Text(
-                                feedProvider.selectedArticle!.title,
-                                style: Theme.of(context).textTheme.headline6,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                child: Text(
+                                  feedProvider.selectedArticle!.title,
+                                  style: Theme.of(context).textTheme.headline6,
+                                ),
                               ),
                             ),
                             Row(
@@ -66,7 +70,8 @@ class DetailWidget extends ConsumerWidget {
                                     color: feedProvider.status == ArticleTableStatus.favorite ? Colors.red : null,
                                   ),
                                   onPressed: () {
-                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.favorite ? ArticleTableStatus.favorite : ArticleTableStatus.unread);
+                                    feedProvider.changeArticleStatusByIndex(
+                                        index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.favorite ? ArticleTableStatus.favorite : ArticleTableStatus.unread);
                                   },
                                 ),
                                 IconButton(
@@ -75,7 +80,8 @@ class DetailWidget extends ConsumerWidget {
                                     color: feedProvider.status == ArticleTableStatus.read ? Colors.green : null,
                                   ),
                                   onPressed: () {
-                                    feedProvider.changeArticleStatusByIndex(index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.read ? ArticleTableStatus.read : ArticleTableStatus.unread);
+                                    feedProvider.changeArticleStatusByIndex(
+                                        index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.read ? ArticleTableStatus.read : ArticleTableStatus.unread);
                                   },
                                 ),
                               ],
@@ -128,8 +134,14 @@ class DetailWidget extends ConsumerWidget {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            if (feedProvider.selectedArticle!.creator != null) Text(feedProvider.selectedArticle!.creator!, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)) else const Text('N/A', style: TextStyle(fontSize: 12)),
-                            Flexible(child: (feedProvider.selectedArticle!.category != null) ? Text(feedProvider.selectedArticle!.category!, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)) : const Text('N/A', style: TextStyle(fontSize: 12))),
+                            if (feedProvider.selectedArticle!.creator != null)
+                              Text(feedProvider.selectedArticle!.creator!, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))
+                            else
+                              const Text('N/A', style: TextStyle(fontSize: 12)),
+                            Flexible(
+                                child: (feedProvider.selectedArticle!.category != null)
+                                    ? Text(feedProvider.selectedArticle!.category!, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))
+                                    : const Text('N/A', style: TextStyle(fontSize: 12))),
                             Text(dateTimeFormat(DateTime.fromMillisecondsSinceEpoch(feedProvider.selectedArticle!.pubDate)), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
                           ],
                         ),

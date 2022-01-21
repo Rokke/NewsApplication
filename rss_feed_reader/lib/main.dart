@@ -10,12 +10,21 @@ import 'package:rss_feed_reader/providers/network.dart';
 import 'package:rss_feed_reader/screens/home.dart';
 
 Future<void> _startLogger(String filepath) async {
+  final fs = File('$filepath\\rss_monitor.log');
+  if (fs.existsSync()) {
+    if (fs.lengthSync() > 100 * 1024) {
+      final backupFile = File('$filepath\\rss_monitor_backup.log');
+      if (backupFile.existsSync()) backupFile.deleteSync();
+      fs.rename('$filepath\\rss_monitor_backup.log');
+    }
+  }
   Logger.root.level = kDebugMode ? Level.FINEST : Level.FINE;
   Logger.root.onRecord.listen((event) async {
-    debugPrint('${'[${event.loggerName}] ${event.level} ${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} ${event.message}'}${event.error == null ? '' : ', ERR: ${event.error}'}');
+    debugPrint(
+        '${'[${event.loggerName}] ${event.level} ${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} ${event.message}'}${event.error == null ? '' : ', ERR: ${event.error}'}');
     if (Platform.isWindows && filepath.isNotEmpty) {
       try {
-        final fs = File('$filepath\\rss_monitor_debug.log');
+        final fs = File('$filepath\\rss_monitor.log');
         fs.writeAsString(
           '[${event.loggerName}] ${event.level} ${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} ${event.message}\n${event.error != null ? " ${event.error}\n" : ""}',
           mode: FileMode.append,
@@ -24,7 +33,8 @@ Future<void> _startLogger(String filepath) async {
         debugPrint('log error: $err');
       }
     } else {
-      debugPrint('[${event.loggerName}] ${event.level} ${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} ${event.message}\n${event.error != null ? " ${event.error}\n" : ""}');
+      debugPrint(
+          '[${event.loggerName}] ${event.level} ${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} ${event.message}\n${event.error != null ? " ${event.error}\n" : ""}');
     }
   });
 }
@@ -35,7 +45,7 @@ Future<void> main() async {
   await _startLogger(appConfig.logFilepath);
   HttpOverrides.global = MyHttpOverrides();
   WidgetsFlutterBinding.ensureInitialized();
-  if (Platform.isWindows) DesktopWindow.setWindowSize(const Size(1200, 1100));
+  // if (Platform.isWindows) DesktopWindow.setWindowSize(const Size(1000, 1300));
   runApp(
     ProviderScope(
       overrides: [providerConfig.overrideWithValue(appConfig)],
