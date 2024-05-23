@@ -1,0 +1,68 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "news_client_application",
+            "cwd": "news_client_application",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "news_client_application (profile mode)",
+            "cwd": "news_client_application",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "news_client_application (release mode)",
+            "cwd": "news_client_application",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "news_common",
+            "cwd": "news_common",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "news_common (profile mode)",
+            "cwd": "news_common",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "news_common (release mode)",
+            "cwd": "news_common",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "rss_feed_reader",
+            "cwd": "rss_feed_reader",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "rss_feed_reader (profile mode)",
+            "cwd": "rss_feed_reader",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "rss_feed_reader (release mode)",
+            "cwd": "rss_feed_reader",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}

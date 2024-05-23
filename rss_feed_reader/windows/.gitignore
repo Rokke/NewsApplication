@@ -1,7 +1,5 @@
-*
-!main.cpp
-!Runner.rc
 flutter/ephemeral/
+
 # Visual Studio user-specific files.
 *.suo
 *.user
@@ -11,7 +9,6 @@ flutter/ephemeral/
 # Visual Studio build-related files.
 x64/
 x86/
-flutter/
 
 # Visual Studio cache files
 # files ending in .cache can be ignored

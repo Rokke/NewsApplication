@@ -10,7 +10,7 @@ class ArticleListItem extends ConsumerWidget {
   final ArticleEncode article;
   final Function() onRemoveArticle;
   final Function() onSelectedArticle;
-  const ArticleListItem({Key? key, required this.article, required this.onRemoveArticle, required this.onSelectedArticle}) : super(key: key);
+  const ArticleListItem({super.key, required this.article, required this.onRemoveArticle, required this.onSelectedArticle});
 
   static Widget articleContainer(BuildContext context, ArticleEncode article, {Function()? onRemoveArticle, bool isSelected = false, Function()? onSelectedArticle}) => Container(
         decoration: BoxDecoration(color: isSelected ? Colors.blue[900] : Colors.blue, borderRadius: BorderRadius.circular(10)),
@@ -33,7 +33,17 @@ class ArticleListItem extends ConsumerWidget {
                       : const Icon(Icons.visibility),
                   dense: true,
                   title: Text(article.title),
-                  subtitle: Text(article.url),
+                  subtitle: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(5), color: Theme.of(context).colorScheme.primaryContainer),
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(article.parent.title)),
+                      const SizedBox(width: 5),
+                      Flexible(child: Text(article.url, overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
                   // trailing: IconButton(
                   //   icon: article.status == ArticleTableStatus.FAVORITE ? Icon(Icons.favorite, color: Colors.red) : Icon(article.status == ArticleTableStatus.READ ? Icons.visibility_off : Icons.visibility),
                   //   onPressed: () => article.status != ArticleTableStatus.UNREAD ? context.read(rssDatabase).updateArticleStatus(articleId: article.id!, status: ArticleTableStatus.UNREAD) : onRemoveArticle(),
@@ -66,7 +76,9 @@ class ArticleListItem extends ConsumerWidget {
           selectedNotifier.value = feedProvider.selectedArticle?.id == article.id;
           return child!;
         },
-        child: ValueListenableBuilder(valueListenable: selectedNotifier, builder: (context, bool selected, _) => articleContainer(context, article, onRemoveArticle: onRemoveArticle, isSelected: selected, onSelectedArticle: onSelectedArticle)),
+        child: ValueListenableBuilder(
+            valueListenable: selectedNotifier,
+            builder: (context, bool selected, _) => articleContainer(context, article, onRemoveArticle: onRemoveArticle, isSelected: selected, onSelectedArticle: onSelectedArticle)),
       );
     } catch (error) {
       debugPrint('Error: $article');

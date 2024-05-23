@@ -32,4 +32,10 @@ class Category{
 	+display_name: string
 	+color: int
 }
+class FeedCategory{
+	+feed: int
+	+category: int
+}
+FeedCategory::feed --> Feed::id
+FeedCategory::category --> Category::id
 @enduml

@@ -3,10 +3,10 @@ description: News client application
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.0+3
+version: 1.0.1+5
 
 environment:
-  sdk: ">=2.15.0 <3.0.0"
+  sdk: ">=2.18.0 <4.0.0"
 
 dependencies:
   cached_network_image:
@@ -24,6 +24,13 @@ dev_dependencies:
   flutter_lints:
   flutter_test:
     sdk: flutter
+  icons_launcher:
+
+icons_launcher:
+  image_path: "assets/app_icon.png"
+  platforms:
+    android:
+      enable: true
 
 flutter:
   uses-material-design: true

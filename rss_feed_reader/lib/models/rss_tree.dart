@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
+import 'package:rss_feed_reader/providers/network.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 
 final monitoringRunning = StateProvider<bool>((ref) => false);
@@ -17,21 +17,24 @@ final monitoringRunning = StateProvider<bool>((ref) => false);
 class RSSHead {
   final _log = Logger('RSSHead');
   Timer? _timer;
-  final Reader read;
-  bool busy = false;
-  RSSHead(this.read); // : super(RSSTree());
+  final Ref ref;
+  bool busy = false, tweetsFailing = false;
+  RSSHead(this.ref); // : super(RSSTree());
   Future<void> startMonitoring({Duration? postponeStart}) async {
     _log.info('startMonitoring($postponeStart)');
-    read(monitoringRunning.notifier).state = true;
-    final feedProvider = read(providerFeedHeader);
+    ref.read(monitoringRunning.notifier).state = true;
+    final feedProvider = ref.read(providerFeedHeader);
     if (postponeStart != null) await Future.delayed(postponeStart);
     _timer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (!busy) {
         busy = true;
         try {
-          if (!await feedProvider.findFeedToUpdate()) await read(providerTweetHeader).checkAndUpdateTweet(isAuto: true);
+          if (!await feedProvider.findFeedToUpdate() && !tweetsFailing) await ref.read(providerTweetHeader).checkAndUpdateTweet(isAuto: true);
+        } on NewsAppNetworkException catch (serr, stackTrace) {
+          tweetsFailing = true;
+          _log.warning('startMonitoring-error', serr, stackTrace);
         } catch (err) {
-          _log.severe('Monitor error', err);
+          _log.severe('startMonitoring-Monitor error-${err.runtimeType}', err);
           stopMonitoring();
         } finally {
           busy = false;
@@ -46,19 +49,19 @@ class RSSHead {
   // }
 
   void stopMonitoring({bool ignoreProvider = false}) {
-    debugPrint('stopMonitoring($ignoreProvider)');
+    _log.info('stopMonitoring($ignoreProvider)');
     _timer?.cancel();
     _timer = null;
-    if (!ignoreProvider) read(monitoringRunning.notifier).state = false;
+    if (!ignoreProvider) ref.read(monitoringRunning.notifier).state = false;
   }
 }
 
 final rssProvider = Provider<RSSHead>((ref) {
   ref.watch(providerConfig);
   Logger('rssProvider').info('rebuild');
-  final rssHead = RSSHead(ref.read);
+  final rssHead = RSSHead(ref);
   ref.onDispose(() {
-    debugPrint('onDispose');
+    Logger('rssProvider').info('onDispose');
     rssHead.stopMonitoring(ignoreProvider: true);
   });
   return rssHead;

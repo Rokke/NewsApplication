@@ -1,12 +1,15 @@
 import 'dart:io';
 
+// import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 // These imports are only needed to open the database
-import 'package:moor/ffi.dart';
+// import 'package:moor/ffi.dart';
 // import 'package:flutter/material.dart';
-import 'package:moor/moor.dart';
+// import 'package:moor/moor.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:rss_feed_reader/models/feed_encode.dart';
@@ -19,17 +22,17 @@ final rssDatabase = Provider<AppDb>((ref) {
   return AppDb();
 });
 
-@UseMoor(
+@DriftDatabase(
   // relative import for the moor file. Moor also supports `package:`
   // imports
-  include: {'tables.moor'},
+  include: {'tables.drift'},
 )
 class AppDb extends _$AppDb {
   final _log = Logger('AppDb');
   AppDb() : super(_openConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
   Future<int> removeActiveStatus(List<int> articleIds) async {
     debugPrint('removeActiveStatus($articleIds)');
     return (update(article)..where((tbl) => tbl.id.isIn(articleIds))).write(const ArticleCompanion(active: Value(false)));
@@ -51,8 +54,8 @@ class AppDb extends _$AppDb {
   Future<int> updateFeed(int feedId, FeedCompanion feedCompanion) => (update(feed)..where((tbl) => tbl.id.equals(feedId))).write(feedCompanion);
   Future<int> deleteFeed(FeedEncode feedEncode) async {
     if (feedEncode.id != null) {
-      await (delete(article)..where((tbl) => tbl.parent.equals(feedEncode.id))).go();
-      return (delete(feed)..where((tbl) => tbl.id.equals(feedEncode.id))).go();
+      await (delete(article)..where((tbl) => tbl.parent.equals(feedEncode.id!))).go();
+      return (delete(feed)..where((tbl) => tbl.id.equals(feedEncode.id!))).go();
     }
     return -1;
   }
@@ -69,8 +72,35 @@ class AppDb extends _$AppDb {
     return into(article).insert(articleCompanion);
   }
 
-  Future<int> updateArticleStatus({required int articleId, int status = ArticleTableStatus.read}) => (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(status: Value(status)));
+  Future<int> updateArticleStatus({required int articleId, int status = ArticleTableStatus.read}) =>
+      (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(status: Value(status)));
   Future<List<ArticleData>> fetchActiveArticles(int feedId) async => (select(article)..where((tbl) => tbl.parent.equals(feedId) & tbl.active.equals(true))).get();
+  Future<List<(int, String)>> fetchCategories(int feedId) async {
+    try {
+      return (await fetchCategoryValuesForFeed(feedId).get()).map((e) => (e.id, e.name)).toList();
+    } catch (err) {
+      _log.severe('fetchCategories($feedId)', err);
+      rethrow;
+    }
+  }
+
+  Future<int> insertFeedCategory(int feedId, String categoryName) async {
+    _log.info('insertFeedCategories($feedId, $categoryName)');
+    final categoryIdFound =
+        (await (select(category)..where((tbl) => tbl.name.equals(categoryName))).getSingleOrNull())?.id ?? await into(category).insert(CategoryCompanion.insert(name: categoryName));
+    return into(feedCategory).insert(FeedCategoryCompanion.insert(feed: feedId, category: categoryIdFound));
+  }
+  // Future<bool> updateFeedCategories(int feedId, List<int> categories) async {
+  //   _log.info('updateFeedCategories($feedId), deleted: ${await (delete(feedCategory)..where((tbl) => tbl.feed.equals(feedId))).go()}');
+  //   if (categories.isNotEmpty) {
+  //     for (final cat in categories) {
+  //       into(feedCategory).insert(FeedCategoryCompanion.insert(feed: feedId, category: cat));
+  //     }
+  //   }
+  //   return true;
+  // }
+
+  // Future<int> deleteFeedCategories(int feedId) => (delete(feedCategory)..where((tbl) => tbl.feed.equals(feedId))).go();
   Future<List<ArticleData>> articles({int? feedId, int status = ArticleTableStatus.unread}) => (feedId == null
           ? (select(article)
             ..where((tbl) => tbl.status.equals(status))
@@ -87,7 +117,8 @@ class AppDb extends _$AppDb {
   Future<int> insertCategory(CategoryCompanion categoryCompanion) => into(category).insert(categoryCompanion);
   Future<int> updateCategory({required int categoryId, required CategoryCompanion categoryCompanion}) => (update(category)..where((tbl) => tbl.id.equals(categoryId))).write(categoryCompanion);
   Stream<CategoryData> fetchCategory({required int categoryId}) => (select(category)..where((tbl) => tbl.id.equals(categoryId))).watchSingle();
-  Stream<CategoryData?> fetchCategoryByName({required String categoryName}) => (select(category)..where((tbl) => tbl.name.equals(categoryName))).watchSingleOrNull();
+  Future<CategoryData?> fetchCategoryByName({required String categoryName}) => (select(category)..where((tbl) => tbl.name.equals(categoryName))).getSingleOrNull();
+
   // numberOfUnreadArticles() => article.id.count(filter: article.status.equals(0) | article.status.equals(null));
   Stream<List<TweetUserData>> tweetUsers() => (select(tweetUser)..orderBy([(tbl) => OrderingTerm.asc(tbl.username)])).watch();
   Future<List<TweetData>> tweets({int status = TweetTableStatus.unread}) => (select(tweet)
@@ -108,7 +139,8 @@ class AppDb extends _$AppDb {
         ),
       );
     }
-    await into(tweet).insert(TweetCompanion.insert(parent: tweetEncode.parentUser.id!, title: tweetEncode.text, createdAt: tweetEncode.createdAt.millisecondsSinceEpoch, tweetId: Value(tweetEncode.id), retweetId: Value(retweetId)));
+    await into(tweet).insert(TweetCompanion.insert(
+        parent: tweetEncode.parentUser.id!, title: tweetEncode.text, createdAt: tweetEncode.createdAt.millisecondsSinceEpoch, tweetId: Value(tweetEncode.id), retweetId: Value(retweetId)));
     return true;
   }
 
@@ -207,6 +239,10 @@ class AppDb extends _$AppDb {
             await customUpdate('UPDATE article SET active=true');
             await customStatement('DROP TABLE feed_fav');
           }
+          if (from < 8) {
+            _log.info('migration version<8: $from');
+            await m.createTable(feedCategory);
+          }
         },
       );
 }
@@ -216,6 +252,6 @@ LazyDatabase _openConnection() {
   return LazyDatabase(() async {
     final dbFolder = (Platform.isWindows && Directory('D:\\Temp\\AppDB').existsSync()) ? 'D:\\Temp\\AppDB' : (await getApplicationDocumentsDirectory()).path;
     final file = File(p.join(dbFolder, kReleaseMode ? 'rss_db.sqlite' : 'rss_db_debug.sqlite'));
-    return VmDatabase(file);
+    return NativeDatabase.createInBackground(file);
   });
 }

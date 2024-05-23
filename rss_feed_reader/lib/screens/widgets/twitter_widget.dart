@@ -8,10 +8,10 @@ import 'package:rss_feed_reader/utils/color_constants.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 
 class TwitterWidget extends ConsumerWidget {
-  const TwitterWidget({Key? key}) : super(key: key);
+  const TwitterWidget({super.key});
   static const double twitterListWidth = 400;
 
-  static Widget tweetContainer(BuildContext context, Reader read, TweetEncodeBase tweet, {bool isRetweet = false}) => Stack(
+  static Widget tweetContainer(BuildContext context, TweetEncodeBase tweet, {bool isRetweet = false, void Function()? onDelete, void Function()? onUpdateProfilePic}) => Stack(
         children: [
           Positioned(
             child: Container(
@@ -29,18 +29,18 @@ class TwitterWidget extends ConsumerWidget {
                     color: tweet.isRetweet ? ColorContants.titleTweetRetweet : ColorContants.titleTweet,
                     child: Row(
                       children: [
-                        Flexible(child: Center(child: Text('${tweet.parentUser.name}(${tweet.parentUser.username})', style: Theme.of(context).textTheme.subtitle2))),
+                        Flexible(child: Center(child: Text('${tweet.parentUser.name}(${tweet.parentUser.username})', style: Theme.of(context).textTheme.titleSmall))),
                         Padding(
                           padding: const EdgeInsets.only(right: 2),
                           child: Text(
                             smartDateTime(tweet.createdAt),
-                            style: Theme.of(context).textTheme.caption,
+                            style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  if (tweet.isRetweet) tweetContainer(context, read, tweet.retweet!, isRetweet: true),
+                  if (tweet.isRetweet) tweetContainer(context, tweet.retweet!, isRetweet: true, onDelete: onDelete),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -50,7 +50,7 @@ class TwitterWidget extends ConsumerWidget {
                         child: Linkify(
                           text: tweet.text,
                           onOpen: (link) => launchURL(link.text),
-                          style: Theme.of(context).textTheme.caption,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
                       if (!isRetweet)
@@ -62,7 +62,7 @@ class TwitterWidget extends ConsumerWidget {
                               color: Colors.green[900],
                             ),
                             child: IconButton(
-                              onPressed: () => read(providerTweetHeader).removeTweet(tweet.id),
+                              onPressed: onDelete,
                               icon: const Icon(Icons.playlist_add_check),
                               color: Colors.green[100],
                               splashRadius: 20,
@@ -90,7 +90,7 @@ class TwitterWidget extends ConsumerWidget {
                       debugPrint('tweetUserContainer-invalidProfilePic(${tweet.parentUser.username}, $url,$error)');
                       if (!tweet.parentUser.invalidUrl) {
                         tweet.parentUser.invalidUrl = true;
-                        read(providerTweetHeader).checkAndUpdateUserInfo(tweet.parentUser);
+                        onUpdateProfilePic?.call();
                       }
                       return const Icon(Icons.error, color: Colors.red);
                     },
@@ -103,12 +103,16 @@ class TwitterWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final twitterHead = ref.watch(providerTweetHeader);
-    debugPrint('${twitterHead.tweets.length}, twitterHead.fetchUserInfo(twitterHead.tweets[index].tweetUserId)');
+    // debugPrint('${twitterHead.tweets.length}, twitterHead.fetchUserInfo(twitterHead.tweets[index].tweetUserId)');
     return AnimatedList(
       reverse: true,
       initialItemCount: twitterHead.tweets.length,
       itemBuilder: (BuildContext context, int index, animation) {
-        return SizeTransition(sizeFactor: animation, child: tweetContainer(context, ref.read, twitterHead.tweets[index]));
+        return SizeTransition(
+            sizeFactor: animation,
+            child: tweetContainer(context, twitterHead.tweets[index],
+                onDelete: () => ref.read(providerTweetHeader).removeTweet(twitterHead.tweets[index].id),
+                onUpdateProfilePic: () => ref.read(providerTweetHeader).checkAndUpdateUserInfo(twitterHead.tweets[index].parentUser)));
       },
       key: twitterHead.tweetKey,
     );

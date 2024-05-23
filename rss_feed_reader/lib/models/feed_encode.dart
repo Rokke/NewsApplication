@@ -1,6 +1,6 @@
+import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:moor/moor.dart';
 import 'package:news_common/news_common.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/xml_mapper/channel_mapper.dart';
@@ -8,8 +8,19 @@ import 'package:rss_feed_reader/models/xml_mapper/item_mapper.dart';
 
 class FeedEncode extends FeedEncodeBase {
   List<ArticleActiveRead> activeArticles = [];
-  FeedEncode({required String title, required String url, required int ttl, required int lastCheck, required int lastBuildDate, required int pubDate, String? description, String? link, int? id, String? category, String? feedFav, String? language})
-      : super(title: title, url: url, ttl: ttl, lastCheck: lastCheck, lastBuildDate: lastBuildDate, pubDate: pubDate, description: description, link: link, id: id, category: category, feedFav: feedFav, language: language);
+  FeedEncode(
+      {required super.title,
+      required super.url,
+      required super.ttl,
+      required super.lastCheck,
+      required super.lastBuildDate,
+      required super.pubDate,
+      super.description,
+      super.link,
+      super.id,
+      super.category,
+      super.feedFav,
+      super.language});
   factory FeedEncode.fromChannel(ChannelMapper channel, String url) => FeedEncode(
         title: channel.title!,
         url: url,
@@ -49,13 +60,14 @@ class FeedEncode extends FeedEncodeBase {
         ttl: Value(ttl),
         pubDate: Value(pubDate),
         link: Value(link),
+        url: Value(url),
         lastBuildDate: Value(lastBuildDate),
         language: Value(language),
       );
 
   @override
   String toString() {
-    return 'FeedEncode($id,$title,$url,$link,$lastBuildDate)';
+    return 'FeedEncode($id,$title,$url,$link,${DateTime.fromMillisecondsSinceEpoch(lastBuildDate)})';
   }
 }
 
@@ -68,9 +80,25 @@ class ArticleActiveRead {
 }
 
 class ArticleEncode extends ArticleEncodeBase {
-  ArticleEncode({int? id, required FeedEncodeBase parent, required String title, required int pubDate, required String url, String? creator, String? description, String? encoded, String? category, required String guid, bool active = true})
-      : super(id: id ?? 0, parent: parent, title: title, pubDate: pubDate, url: url, creator: creator, description: description, encoded: encoded, category: category, guid: guid, active: active);
-  Future<String?> articleDescription(AppDb db) async => description ??= (await (db.select(db.article)..where((tbl) => tbl.id.equals(id))).getSingleOrNull())?.description;
+  ArticleEncode(
+      {int? id,
+      required super.parent,
+      required super.title,
+      required super.pubDate,
+      required super.url,
+      super.creator,
+      super.description,
+      super.encoded,
+      super.category,
+      required super.guid,
+      super.active})
+      : super(id: id ?? 0);
+  Future<String?> articleDescription(AppDb db) async {
+    // debugPrint('articleDescription($id): ${(await (db.select(db.article)..where((tbl) => tbl.id.equals(id))).getSingleOrNull())?.description}, $description');
+    return description ??= (await (db.select(db.article)..where((tbl) => tbl.id.equals(id))).getSingleOrNull())?.description ?? '';
+  }
+
+  static String _removeDataTag(String? text) => text == null ? '' : RegExp(r'<!\[CDATA\[(.*)\]\]>', multiLine: true).firstMatch(text)?.group(1) ?? text;
   factory ArticleEncode.fromChannelItem(ItemMapper item, FeedEncode feed, {Logger? log}) {
     try {
       return ArticleEncode(
@@ -78,7 +106,7 @@ class ArticleEncode extends ArticleEncodeBase {
         title: item.title!,
         guid: item.guid ?? item.link!,
         url: item.link!,
-        description: item.description,
+        description: _removeDataTag(item.description),
         creator: item.author,
         encoded: item.encoded,
         category: item.category,
@@ -123,7 +151,7 @@ class ArticleEncode extends ArticleEncodeBase {
       );
   @override
   String toString() {
-    return 'ArticleEncode($id,$title,$guid,${parent.id},$creator,${(active ? '' : '!') + 'active'})';
+    return 'ArticleEncode($id,$title,$guid,${parent.id},$creator,${'${active ? '' : '!'}active'})';
   }
 }
 
@@ -136,7 +164,8 @@ class FeedFullDecode {
   factory FeedFullDecode.fromChannel(ChannelMapper channel, String url, {FeedEncode? parentFeed, Logger? log}) {
     try {
       final newFeed = FeedEncode.fromChannel(channel, url);
-      return FeedFullDecode(feed: newFeed, articles: channel.items.where((element) => element.link != null).map((item) => ArticleEncode.fromChannelItem(item, parentFeed ?? newFeed, log: log)).toList(), url: url);
+      return FeedFullDecode(
+          feed: newFeed, articles: channel.items.where((element) => element.link != null).map((item) => ArticleEncode.fromChannelItem(item, parentFeed ?? newFeed, log: log)).toList(), url: url);
     } catch (err) {
       log?.warning('FeedFullDecode.fromChannel($url)', err);
       rethrow;

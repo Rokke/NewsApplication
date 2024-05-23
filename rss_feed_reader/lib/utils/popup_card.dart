@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 class HeroDialogRoute<T> extends PageRoute<T> {
   final WidgetBuilder _builder;
 
-  HeroDialogRoute({required WidgetBuilder builder, RouteSettings? settings, bool fullscreenDialog = false})
-      : _builder = builder,
-        super(settings: settings, fullscreenDialog: fullscreenDialog);
+  HeroDialogRoute({required WidgetBuilder builder, super.settings, super.fullscreenDialog})
+      : _builder = builder;
   @override
   Color? get barrierColor => Colors.black54;
   @override

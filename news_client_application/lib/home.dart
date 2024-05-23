@@ -1,25 +1,25 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:news_client_application/models/socket_response.dart';
+import 'package:news_client_application/providers/socket_provider.dart';
 import 'package:news_client_application/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:news_client_application/providers/socket_provider.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_linkify/flutter_linkify.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({Key? key}) : super(key: key);
 
   @override
-  _HomePageState createState() => _HomePageState();
+  ConsumerState createState() => _HomePageState();
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
   bool showFeeds = true;
   void launchURL(String url) async {
     final completeUrl = url.startsWith('http') ? url : 'http://$url';
-    await launch(completeUrl);
+    await launchUrl(Uri.parse(completeUrl));
   }
 
   @override
@@ -45,7 +45,8 @@ class _HomePageState extends ConsumerState<HomePage> {
             ],
           ),
           actions: [
-            if (socketProvider.isConnected) IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: const Icon(Icons.skip_previous)),
+            if (socketProvider.isConnected)
+              IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: const Icon(Icons.skip_previous)),
             if (socketProvider.isConnected) IconButton(onPressed: () => url.isNotEmpty ? launchURL(url) : null, icon: const Icon(Icons.open_in_browser)),
             if (socketProvider.isConnected)
               IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: const Icon(Icons.skip_next))
@@ -80,7 +81,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                               child: Center(
                                 child: Text(
                                   item.title,
-                                  style: Theme.of(context).primaryTextTheme.bodyText1,
+                                  style: Theme.of(context).primaryTextTheme.bodyLarge,
                                 ),
                               ),
                             ),
@@ -94,12 +95,12 @@ class _HomePageState extends ConsumerState<HomePage> {
                                       : Linkify(
                                           text: item.text,
                                           onOpen: (link) => launchURL(link.text),
-                                          style: Theme.of(context).textTheme.headline6,
+                                          style: Theme.of(context).textTheme.titleLarge,
                                         ))
                             else
                               const Expanded(child: Center(child: Text('No description'))),
                             Container(
-                              color: Theme.of(context).bottomAppBarColor,
+                              color: Theme.of(context).bottomAppBarTheme.color,
                               child: Row(children: [
                                 Container(
                                     width: width,
@@ -145,15 +146,19 @@ class _HomePageState extends ConsumerState<HomePage> {
                                           Align(
                                             alignment: Alignment.topLeft,
                                             child: Text(
-                                              showFeeds ? '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}' : '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}',
-                                              style: Theme.of(context).primaryTextTheme.headline6,
+                                              showFeeds
+                                                  ? '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}'
+                                                  : '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}',
+                                              style: Theme.of(context).primaryTextTheme.titleLarge,
                                             ),
                                           ),
                                           Align(
                                             alignment: Alignment.bottomRight,
                                             child: Text(
-                                              showFeeds ? '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}' : '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}',
-                                              style: Theme.of(context).primaryTextTheme.bodyText1,
+                                              showFeeds
+                                                  ? '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}'
+                                                  : '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}',
+                                              style: Theme.of(context).primaryTextTheme.bodyLarge,
                                             ),
                                           ),
                                         ],
@@ -171,7 +176,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                             : snapshot.data!.code == -2
                                 ? 'Ingen tweets'
                                 : 'Unknown type',
-                        style: Theme.of(context).textTheme.headline3,
+                        style: Theme.of(context).textTheme.displaySmall,
                       ));
                     } else {
                       return const Text('No data');

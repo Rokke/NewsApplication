@@ -1,3 +1,14 @@
 /sms-alert-1-daniel_simon.wav
 /Warning Siren-SoundBible.com-898272278.wav
 *.log
+*/**/pubspec.lock
+windows/
+rss_feed_reader/windows/runner/main.cpp
+rss_feed_reader/windows/runner/flutter_window.h
+rss_feed_reader/windows/runner/flutter_window.cpp
+rss_feed_reader/windows/runner/CMakeLists.txt
+rss_feed_reader/windows/CMakeLists.txt
+rss_feed_reader/windows/runner/runner.exe.manifest
+rss_feed_reader/windows/runner/utils.cpp
+rss_feed_reader/windows/runner/win32_window.cpp
+rss_feed_reader/windows/runner/win32_window.h

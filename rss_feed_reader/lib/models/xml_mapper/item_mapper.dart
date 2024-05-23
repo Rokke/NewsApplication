@@ -48,7 +48,7 @@ class ItemMapper extends XMLBaseMapper {
             item.guid = xNode.innerXml;
             break;
           case 'category':
-            final cat = xNode.innerText.split(',').where((element) => element.isNotEmpty).toList();
+            final cat = xNode.innerText.split(',').map((e) => e.trim()).where((element) => element.isNotEmpty && !element.contains('|')).toList();
             if (cat.isNotEmpty) {
               item.category = ((item.category == null) ? '' : '${item.category},') + cat.join(',');
             }
@@ -61,6 +61,7 @@ class ItemMapper extends XMLBaseMapper {
             break;
           case 'pubDate':
           case 'updated':
+          case 'modified':
           case 'published':
           case 'atom:updated':
             if (item.pubDate == null) {
@@ -73,6 +74,7 @@ class ItemMapper extends XMLBaseMapper {
             }
             break;
           case 'media:content':
+          case 'media:description':
           case 'enclosure':
           case 'image':
           case 'cloud':
@@ -110,9 +112,14 @@ class ItemMapper extends XMLBaseMapper {
           case 'yt:videoId':
           case 'yt:channelId':
           case 'dc:date':
+          case 'ingested':
+          case 'source_id':
+          case 'neowin:tags':
             break;
           default:
-            if (!xNode.name.toString().startsWith('vg:')) _log.info('Ukjent feed element: ${xNode.name}=>${xNode.text.length > 100 ? xNode.text.substring(0, 100) + "..." : xNode.text}');
+            if (!xNode.name.toString().startsWith('vg:') && !xNode.name.toString().startsWith('dc:')) {
+              _log.warning('Ukjent feed element: ${xNode.name}=>${xNode.value != null && xNode.value!.length > 100 ? "${xNode.value!.substring(0, 100)}..." : xNode.value}');
+            }
         }
       } else if (xNode.nodeType != XmlNodeType.COMMENT && xNode.outerXml.trim().isNotEmpty) {
         _log.info('Ukjent nodetype: ${xNode.nodeType}=>${xNode.outerXml}');

@@ -11,25 +11,57 @@ import 'package:rss_feed_reader/utils/misc_functions.dart';
 
 final providerErrorReported = StateProvider<String?>((ref) => null);
 
+class DetailStackWidget extends StatelessWidget {
+  const DetailStackWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    debugPrint('DetailsStack build');
+    return Stack(
+        fit: StackFit.loose,
+        // height: 200,
+        children: [
+          // Column(
+          //   mainAxisSize: MainAxisSize.min,
+          //   children: [
+          const DetailWidget(),
+          Positioned(right: 0, bottom: 0, child: Container(constraints: const BoxConstraints.expand(width: 400, height: 500), child: const TwitterWidget()))
+          //   ],
+          // ),
+        ]);
+  }
+}
+
 class DetailWidget extends ConsumerWidget {
-  final _log = Logger('DetailWidget');
-  DetailWidget({Key? key}) : super(key: key);
+  static final _log = Logger('DetailWidget');
+  const DetailWidget({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     debugPrint('Details build');
-    final feedProvider = ref.read(providerFeedHeader);
+    final feedProvider = ref.watch(providerFeedHeader);
     return Card(
       child: Container(
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
         child: ValueListenableBuilder(
           valueListenable: feedProvider.selectedArticleIndexNotifier,
           builder: (context, int selectedIndex, child) => selectedIndex >= 0
-              ? RawKeyboardListener(
+              ? KeyboardListener(
                   focusNode: FocusNode(),
                   autofocus: true,
-                  onKey: (RawKeyEvent event) {
-                    if (event.logicalKey == LogicalKeyboardKey.delete && event.runtimeType.toString() == 'RawKeyDownEvent') feedProvider.changeArticleStatusByIndex(index: selectedIndex);
+                  onKeyEvent: (KeyEvent event) {
+                    // if (event.runtimeType.toString() == 'onKeyEvent') {
+                    switch (event.logicalKey) {
+                      case LogicalKeyboardKey.delete:
+                        feedProvider.changeArticleStatusByIndex(index: selectedIndex);
+                        break;
+                      case LogicalKeyboardKey.arrowDown:
+                        feedProvider.selectNextArticle();
+                        break;
+                      case LogicalKeyboardKey.arrowUp:
+                        feedProvider.selectPreviousArticle();
+                        break;
+                    }
                   },
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -47,7 +79,7 @@ class DetailWidget extends ConsumerWidget {
                                 padding: const EdgeInsets.symmetric(horizontal: 4.0),
                                 child: Text(
                                   feedProvider.selectedArticle!.title,
-                                  style: Theme.of(context).textTheme.headline6,
+                                  style: Theme.of(context).textTheme.titleLarge,
                                 ),
                               ),
                             ),
@@ -97,6 +129,7 @@ class DetailWidget extends ConsumerWidget {
                             initialData: null,
                             builder: (BuildContext context, AsyncSnapshot snapshot) {
                               try {
+                                // debugPrint('snapshot: ${snapshot.data}');
                                 return !snapshot.hasData
                                     ? const CircularProgressIndicator()
                                     : snapshot.data is String
@@ -104,21 +137,21 @@ class DetailWidget extends ConsumerWidget {
                                             // child: Text(snapshot.data)
                                             child: Html(
                                               data: snapshot.data as String,
-                                              onImageError: (err, obj) {
-                                                ref.read(providerErrorReported.notifier).state = 'onImageError(): $err';
-                                                _log.warning('onImageError(${feedProvider.selectedArticle!.id})=>$obj', err);
-                                              },
-                                              onMathError: (str1, str2, str3) {
-                                                ref.read(providerErrorReported.notifier).state = 'onMathError()';
-                                                _log.warning('onMathError(${feedProvider.selectedArticle!.id})=>$str1,$str2,$str3');
-                                                return Container(constraints: const BoxConstraints.tightFor(width: 20, height: 20), color: Colors.red);
-                                              },
+                                              // onImageError: (err, obj) {
+                                              //   ref.read(providerErrorReported.notifier).state = 'onImageError(): $err';
+                                              //   _log.warning('onImageError(${feedProvider.selectedArticle!.id})=>$obj', err);
+                                              // },
+                                              // onMathError: (str1, str2, str3) {
+                                              //   ref.read(providerErrorReported.notifier).state = 'onMathError()';
+                                              //   _log.warning('onMathError(${feedProvider.selectedArticle!.id})=>$str1,$str2,$str3');
+                                              //   return Container(constraints: const BoxConstraints.tightFor(width: 20, height: 20), color: Colors.red);
+                                              // },
                                             ),
                                           )
                                         : Center(
                                             child: Text(
                                               'Ingen beskrivelse',
-                                              style: Theme.of(context).textTheme.headline3,
+                                              style: Theme.of(context).textTheme.displaySmall,
                                             ),
                                           );
                               } catch (err) {
@@ -152,7 +185,7 @@ class DetailWidget extends ConsumerWidget {
               : Center(
                   child: Text(
                     'Ingen artikkel valgt',
-                    style: Theme.of(context).textTheme.headline3,
+                    style: Theme.of(context).textTheme.displaySmall,
                   ),
                 ),
         ),

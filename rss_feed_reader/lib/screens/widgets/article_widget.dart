@@ -11,7 +11,7 @@ import 'package:rss_feed_reader/screens/widgets/lists/article_list_item.dart';
 // final selectedArticleHelperProvider = StateProvider<SelectedArticleHelper?>((ref) => null);
 
 class ArticleView extends ConsumerWidget {
-  const ArticleView({Key? key}) : super(key: key);
+  const ArticleView({super.key});
 
   // static _changeArticleStatus(BuildContext context, List<ArticleEncode> articles, int index, StateController<SelectedArticleHelper?> selected, int status) async {
   //   debugPrint('_changeArticleStatus - selected: ${articles.length - 1 > index ? index + 1 : index - 1}, index: $index, newindex: ${articles.length - 1 > index ? index + 1 : index - 1}, length: ${articles.length}: change: ${articles[index].id}-${articles[index].title}');
@@ -47,7 +47,7 @@ class ArticleView extends ConsumerWidget {
             : Center(
                 child: Text(
                   'Ingen uleste RSS feed',
-                  style: Theme.of(context).textTheme.headline3,
+                  style: Theme.of(context).textTheme.displaySmall,
                 ),
               ),
       ),

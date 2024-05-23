@@ -1,11 +1,13 @@
 import 'package:collection/collection.dart';
+import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 import 'package:html_unescape/html_unescape.dart';
-import 'package:moor/moor.dart';
+import 'package:logging/logging.dart';
 import 'package:news_common/tweet_encode.dart';
 import 'package:rss_feed_reader/database/database.dart';
 
 class TweetEncode extends TweetEncodeBase {
+  static final _log = Logger('TweetEncode');
   // final int id; //, tweetUserId;
   // final String text;
   // final DateTime createdAt;
@@ -13,7 +15,7 @@ class TweetEncode extends TweetEncodeBase {
   // // final List<TweetReferencedTweet> referenced_tweets;
   // TweetUserEncode parentUser;
 
-  TweetEncode({required int id, required TweetUserEncode parentUser, required String text, required DateTime createdAt, TweetEncodeBase? retweet}) : super(id: id, parentUser: parentUser, text: text, createdAt: createdAt, retweet: retweet);
+  TweetEncode({required super.id, required super.parentUser, required super.text, required super.createdAt, super.retweet});
   factory TweetEncode.fromJSON(TweetUserEncode parentUser, Map<String, dynamic> data, List<TweetEncode>? linkedTweets) {
     try {
       // if (parentUser == null) ;
@@ -31,7 +33,7 @@ class TweetEncode extends TweetEncodeBase {
       }
       return ret;
     } catch (err) {
-      debugPrint('TweetEncode.fromJSON exception: $data');
+      _log.warning('TweetEncode.fromJSON exception: $data');
       rethrow;
     }
   }
@@ -47,7 +49,11 @@ class TweetEncode extends TweetEncodeBase {
   //         'username': parentUser.username,
   //       }
   //     };
-  factory TweetEncode.retweetFromDB(RetweetData data) => TweetEncode(id: data.tweetId, parentUser: TweetUserEncode(tweetUserId: data.tweetUserId, username: data.username, name: data.name), text: data.title, createdAt: DateTime.fromMillisecondsSinceEpoch(data.createdAt));
+  factory TweetEncode.retweetFromDB(RetweetData data) => TweetEncode(
+      id: data.tweetId,
+      parentUser: TweetUserEncode(tweetUserId: data.tweetUserId, username: data.username, name: data.name),
+      text: data.title,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(data.createdAt));
   factory TweetEncode.fromDB(TweetData data, List<TweetUserEncode> users, RetweetData? retweet) {
     try {
       return TweetEncode(
@@ -57,8 +63,8 @@ class TweetEncode extends TweetEncodeBase {
         createdAt: DateTime.fromMillisecondsSinceEpoch(data.createdAt),
         retweet: retweet != null ? TweetEncode.retweetFromDB(retweet) : null,
       );
-    } catch (err) {
-      debugPrint('TweetEncode.fromDB exception: $data, ${users.length}, $retweet');
+    } catch (err, stack) {
+      _log.warning('TweetEncode.fromDB exception: $data, ${users.length}, $retweet', err, stack);
       rethrow;
     }
   }
@@ -120,6 +126,7 @@ extension TweetUserEncodeFunctions on TweetUserEncode {
 // }
 
 class TweetFullDecode {
+  static final _log = Logger('TweetFullDecode');
   List<TweetUserEncode>? includeUsers;
   late List<TweetEncode> tweets;
   List<TweetEncode>? includeTweets;
@@ -130,16 +137,18 @@ class TweetFullDecode {
       }
       try {
         if (includeUsers != null && json['includes']['tweets'] is List<Map<String, dynamic>>) {
-          includeTweets = (json['includes']['tweets'] as List<Map<String, dynamic>>).map<TweetEncode>((tweet) => TweetEncode.fromJSON(includeUsers!.firstWhere((iuser) => iuser.tweetUserId == int.tryParse(tweet['author_id'].toString())), tweet, null)).toList();
+          includeTweets = (json['includes']['tweets'] as List<Map<String, dynamic>>)
+              .map<TweetEncode>((tweet) => TweetEncode.fromJSON(includeUsers!.firstWhere((iuser) => iuser.tweetUserId == int.tryParse(tweet['author_id'].toString())), tweet, null))
+              .toList();
         }
-      } catch (err) {
-        debugPrint('ERR include(${includeUsers?.length}): $includeUsers');
-        debugPrint('tweets: ${json['includes']['tweets']}');
-        debugPrint('jsonusers: ${json['includes']['users']}');
+      } catch (err, stack) {
+        _log.warning('ERR include(${includeUsers?.length}): $includeUsers', err, stack);
+        _log.info('tweets: ${json['includes']['tweets']}');
+        _log.info('jsonusers: ${json['includes']['users']}');
         rethrow;
       }
     } else {
-      debugPrint('No includes');
+      _log.info('No includes');
     }
     if (json['data'] is List) {
       tweets = (json['data'] as List).map<TweetEncode>((data) {

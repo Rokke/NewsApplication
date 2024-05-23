@@ -12,5 +12,5 @@ analyzer:
     - lib/database/database.g.dart
     - lib/generated_plugin_registrant.dart
   plugins:
-    - moor
+    - drift
 #include: package:pedantic/analysis_options.yaml

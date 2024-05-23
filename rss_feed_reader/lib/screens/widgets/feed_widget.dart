@@ -23,7 +23,7 @@ import 'package:rss_feed_reader/utils/popup_card.dart';
 
 class FeedView extends ConsumerWidget {
   // final _log = Logger('FeedView');
-  const FeedView({Key? key}) : super(key: key);
+  const FeedView({super.key});
 
   // _test() async {
   //   final url = 'https://www.rbnett.no/?widgetName=polarisFeeds&widgetId=6485383&getXmlFeed=true';
@@ -95,34 +95,29 @@ class FeedView extends ConsumerWidget {
                 padding: const EdgeInsets.all(4),
                 child: Stack(
                   children: [
-                    Container(constraints: const BoxConstraints.expand(height: 30), child: Text('RSS Feeder', style: Theme.of(context).textTheme.headline6)),
+                    Container(constraints: const BoxConstraints.expand(height: 30), child: Text('RSS Feeder', style: Theme.of(context).textTheme.titleLarge)),
                     Positioned(
                       right: 0,
                       bottom: 0,
-                      child: Hero(
-                        tag: AddFeedPopup.heroTag,
-                        child: Material(
-                          child: SingleChildScrollView(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.of(context).push(
-                                  HeroDialogRoute(
-                                    builder: (context) {
-                                      return const AddFeedPopup();
-                                    },
-                                  ),
-                                ).then((ret) {
-                                  if (ret is String && ret.length > 1) {
-                                    Navigator.of(context).pop();
-                                  } else {
-                                    debugPrint('Ugyldig valg');
-                                  }
-                                });
-                              },
-                              icon: const Icon(Icons.add_circle),
-                              label: const Text('Ny RSS/Twitter'),
-                            ),
-                          ),
+                      child: SingleChildScrollView(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              HeroDialogRoute(
+                                builder: (context) {
+                                  return const AddFeedPopup();
+                                },
+                              ),
+                            ).then((ret) {
+                              if (ret is String && ret.length > 1) {
+                                Navigator.of(context).pop();
+                              } else {
+                                debugPrint('Ugyldig valg');
+                              }
+                            });
+                          },
+                          icon: const Icon(Icons.add_circle),
+                          label: const Text('Ny RSS/Twitter'),
                         ),
                       ),
                     ),

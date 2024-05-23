@@ -27,11 +27,12 @@ class FeedListItem extends ConsumerWidget {
   // static final _log = Logger('FeedListItem');
   final FeedEncode feed;
   final bool isSelected;
-  const FeedListItem({Key? key, required this.feed, this.isSelected = false}) : super(key: key);
+  const FeedListItem({super.key, required this.feed, this.isSelected = false});
 
-  static Widget feedContainer(BuildContext context, Reader read, FeedEncode feed, {bool isSelected = false}) {
+  static Widget feedContainer(BuildContext context, WidgetRef ref, FeedEncode feed, {bool isSelected = false}) {
     final isLoading = ValueNotifier(false);
-    final feedProvider = read(providerFeedHeader);
+    final feedProvider = ref.read(providerFeedHeader);
+    // debugPrint('feedContainer: $feed');
     return Card(
       elevation: isSelected ? 0 : 6,
       margin: EdgeInsets.zero,
@@ -79,10 +80,8 @@ class FeedListItem extends ConsumerWidget {
                               break;
                             case 'update':
                               isLoading.value = true;
-                              () async {
-                                await feedProvider.updateOrCreateFeed(feed);
-                                isLoading.value = false;
-                              }();
+                              debugPrint('Updateing feed: $feed');
+                              feedProvider.updateOrCreateFeed(feed).then((value) => isLoading.value = false);
                               break;
                             case 'delete':
                               feedProvider.removeFeed(feed.id!);
@@ -102,7 +101,7 @@ class FeedListItem extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                       decoration: BoxDecoration(color: Theme.of(context).appBarTheme.backgroundColor, border: Border.all(color: Colors.deepPurple, width: 2), borderRadius: BorderRadius.circular(15)),
-                      child: Text(feed.id.toString(), style: Theme.of(context).textTheme.button),
+                      child: Text(feed.id.toString(), style: Theme.of(context).textTheme.labelLarge),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
@@ -110,14 +109,14 @@ class FeedListItem extends ConsumerWidget {
                       child: Center(
                         child: Text(
                           feed.title,
-                          style: Theme.of(context).textTheme.button,
+                          style: Theme.of(context).textTheme.labelLarge,
                         ),
                       ),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                       decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondary, border: Border.all(color: Colors.purple, width: 2), borderRadius: BorderRadius.circular(15)),
-                      child: ValueListenableBuilder(valueListenable: feedProvider.numberOfArticleNotifier, builder: (context, int amount, _) => Text(amount.toString(), style: TextStyle(color: Theme.of(context).primaryColor))),
+                      child: Text(feed.activeArticles.length.toString(), style: TextStyle(color: Theme.of(context).primaryColor)),
                     ),
                   ],
                 ),
@@ -167,7 +166,7 @@ class FeedListItem extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(color: Theme.of(context).appBarTheme.backgroundColor, border: Border.all(color: Colors.deepPurple, width: 2), borderRadius: BorderRadius.circular(5)),
-                      child: Text(feed.ttl.toString(), style: Theme.of(context).textTheme.button),
+                      child: Text(feed.ttl.toString(), style: Theme.of(context).textTheme.labelLarge),
                     ),
                   ],
                 ),
@@ -185,6 +184,6 @@ class FeedListItem extends ConsumerWidget {
     // final selected = watch(selectedFeedId);
     // final isSelected = selected.state == feed.id;
     // final numberOfUnreadArticles = watch(numberOfFeedsProvider(feedId));
-    return feedContainer(context, ref.read, feed, isSelected: isSelected);
+    return feedContainer(context, ref, feed, isSelected: isSelected);
   }
 }

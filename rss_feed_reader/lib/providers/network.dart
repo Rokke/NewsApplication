@@ -48,6 +48,13 @@ Future<ChannelMapper?> readChannel(String url, {Logger? log}) async {
   // return numberOfArticlesAdded;
 }
 
+class NewsAppNetworkException implements Exception {
+  final String url, msg;
+  NewsAppNetworkException(this.url, this.msg);
+  @override
+  String toString() => 'NewsAppNetworkException: $url, $msg';
+}
+
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
@@ -55,26 +62,31 @@ class MyHttpOverrides extends HttpOverrides {
   }
 }
 
-Future<Map<String, dynamic>?> getResponse(String url, {Map<String, dynamic>? headers, Logger? log}) async {
-  final response = await http.Dio().get(
-    url,
-    options: headers != null
-        ? http.Options(
-            headers: headers,
-          )
-        : null,
-  );
-  if (response.statusCode == 200) {
-    if (response.data['data'] != null) {
-      return response.data as Map<String, dynamic>;
+Future<Map<String, dynamic>?> getResponse(String url, {Map<String, dynamic>? headers, required Logger log}) async {
+  try {
+    final response = await http.Dio().get(
+      url,
+      options: headers != null
+          ? http.Options(
+              headers: headers,
+            )
+          : null,
+    );
+    if (response.statusCode == 200) {
+      if (response.data['data'] != null) {
+        return response.data as Map<String, dynamic>;
+      } else {
+        log.info('getResponse()-No changed: ${response.data}');
+      }
+      return {};
     } else {
-      log?.info('getResponse()-No changed: ${response.data}');
+      log.warning('getResponse()-Err response: ${response.data}');
     }
-    return {};
-  } else {
-    log?.warning('getResponse()-Err response: ${response.data}');
+    return null;
+  } on http.DioException catch (err, stackTrace) {
+    log.severe('getResponse error', err, stackTrace);
+    throw NewsAppNetworkException(url, 'getResponse() error');
   }
-  return null;
 }
 
 Future<XmlElement?> readFeed(String url, {Logger? log}) async {
@@ -102,11 +114,11 @@ Future<XmlElement?> readFeed(String url, {Logger? log}) async {
     } else {
       log?.warning('Error downloading feed: ${response.statusCode}, $url');
     }
-  } on http.DioError catch (serr) {
+  } on http.DioException catch (serr, stack) {
     debugPrint('socket error: $serr');
-    log?.warning('readFeed dio error ($url): ${serr.type}, ${serr.message}, ${serr.runtimeType}');
-    if (serr.type == http.DioErrorType.response) throw SocketException('DIO error: $serr');
-    log?.warning('readFeed error ${serr.error["errno"]}');
+    log?.warning('readFeed dio error ($url): ${serr.type}, ${serr.message}, ${serr.runtimeType}', serr, stack);
+    // if (serr.type == http.DioErrorType.response) throw SocketException('DIO error: $serr');
+    log?.warning('readFeed error ${serr.error}');
     rethrow;
   } catch (err) {
     debugPrint('error: $err');

@@ -23,4 +23,7 @@ class ApplicationConfiguration extends ChangeNotifier {
     if (logFilepath != null && logFilepath != this.logFilepath) prefs.setString('logFilepath', this.logFilepath = logFilepath);
     notifyListeners();
   }
+
+  @override
+  String toString() => 'ApplicationConfiguration($socketServerInternal,$socketServerExternal,$logFilepath)';
 }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,7 +14,7 @@ class ApplicationConfiguration extends ChangeNotifier {
     socketServerInternal = prefs.getString('socketInternal') ?? '';
     socketServerExternal = prefs.getString('socketExternal') ?? '';
     socketSecret = prefs.getString('socketSecret') ?? '';
-    logFilepath = prefs.getString('logFilepath') ?? (kDebugMode ? 'D:\\Temp' : '');
+    logFilepath = prefs.getString('logFilepath') ?? ((kDebugMode && Platform.isWindows) ? 'D:\\Temp' : '');
   }
 
   Future<void> updateSettings({String? socketServerInternal, String? socketServerExternal, String? socketSecret, String? logFilepath}) async {

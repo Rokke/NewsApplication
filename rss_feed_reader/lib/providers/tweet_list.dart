@@ -1,18 +1,21 @@
+import 'dart:io';
+
 import 'package:collection/collection.dart';
+import 'package:drift/drift.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
-import 'package:moor/moor.dart';
 import 'package:news_common/tweet_encode.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/tweet_encoding.dart';
 import 'package:rss_feed_reader/providers/network.dart' as network;
+import 'package:rss_feed_reader/screens/widgets/details_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/twitter_widget.dart';
 import 'package:rss_feed_reader/secret.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 
 final providerTweetHeader = Provider<TweetListHeader>((ref) {
-  return TweetListHeader(ref.read);
+  return TweetListHeader(ref);
 });
 const int twitterCheckInterval = 600000;
 
@@ -21,23 +24,24 @@ class TweetListHeader {
   final _listTweetKey = GlobalKey<AnimatedListState>(), _listTweetUserKey = GlobalKey<AnimatedListState>();
   // final AppDb db;
   // final List<int> readIds = [];
-  final Reader _read;
+  final Ref _ref;
   final List<TweetEncode> tweets = [];
   final List<TweetUserEncode> tweetUsers = [];
   bool isInitialized = false;
 
-  TweetListHeader(this._read) {
+  TweetListHeader(this._ref) {
     _init();
   }
   Future<void> _init() async {
     isInitialized = false;
-    final db = _read(rssDatabase);
+    final db = _ref.read(rssDatabase);
     tweetUsers.addAll((await (db.select(db.tweetUser)..orderBy([(tbl) => OrderingTerm.asc(tbl.username)])).get()).map((e) => e.toTweetUserEncode()));
     debugPrint('_init(), tweetusers from db: ${tweetUsers.length}');
     final undreadTweets = await db.tweets();
     debugPrint('_init(), unread tweets from db: ${undreadTweets.length}');
     for (var i = 0; i < undreadTweets.length; i++) {
-      _insertNewTweetToList(TweetEncode.fromDB(undreadTweets[i], tweetUsers, undreadTweets[i].retweetId != null ? (await (db.select(db.retweet)..where((tbl) => tbl.tweetId.equals(undreadTweets[i].retweetId))).getSingleOrNull()) : null));
+      _insertNewTweetToList(TweetEncode.fromDB(undreadTweets[i], tweetUsers,
+          undreadTweets[i].retweetId != null ? (await (db.select(db.retweet)..where((tbl) => tbl.tweetId.equals(undreadTweets[i].retweetId!))).getSingleOrNull()) : null));
     }
     // tweets.addAll(.map((e) => await _createTweetObject(e)).toList());
     // tweets.addAll(.map((e) => TweetEncode.fromDB(e, tweetUsers, e.retweetId!=null?await (db.select(db.retweet)..where((tbl)=>tbl.tweetId.equals(e.retweetId))) :null)));
@@ -94,8 +98,8 @@ class TweetListHeader {
         if (tweetUser!.lastCheck + twitterCheckInterval < DateTime.now().millisecondsSinceEpoch) {
           await refreshTweetsFromUser(tweetUser, isAuto: isAuto);
           return true;
-        } else {
-          _log.fine('No need to update twitter: $tweetUser');
+          // } else {
+          //   _log.fine('No need to update twitter: $tweetUser');
         }
       } else {
         _log.warning('checkAndUpdateTweet()-illegal tweet: $tweetUser');
@@ -108,11 +112,17 @@ class TweetListHeader {
 
   Future<TweetFullDecode?> fetchUserTweets(TweetUserEncode tweetUserData) async {
     assert(tweetUserData.id != null, 'Invalid tweetUser: $tweetUserData');
-    final url = 'https://api.twitter.com/2/users/${tweetUserData.tweetUserId}/tweets?user.fields=id,username,name,profile_image_url&expansions=referenced_tweets.id.author_id&tweet.fields=created_at&exclude=replies' + (tweetUserData.sinceId > 0 ? '&since_id=${tweetUserData.sinceId}' : '');
+    final url =
+        'https://api.twitter.com/2/users/${tweetUserData.tweetUserId}/tweets?user.fields=id,username,name,profile_image_url&expansions=referenced_tweets.id.author_id&tweet.fields=created_at&exclude=replies${tweetUserData.sinceId > 0 ? '&since_id=${tweetUserData.sinceId}' : ''}';
     _log.info('fetchUserTweets($tweetUserData):$url');
-    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'});
-    if (response != null && response['data'] is List) {
-      return TweetFullDecode(response, tweetUserData);
+    try {
+      final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'}, log: _log);
+      if (response != null && response['data'] is List) {
+        return TweetFullDecode(response, tweetUserData);
+      }
+    } on SocketException catch (err) {
+      _log.severe('fetchUserTweets, tweet error: ${tweetUserData.tweetUserId}', err);
+      _ref.read(providerErrorReported.notifier).state = 'fetchUserTweets error: ${tweetUserData.tweetUserId}';
     }
     return null;
   }
@@ -123,8 +133,10 @@ class TweetListHeader {
     if (found != null) {
       if (found.profileImageUrl != tweet.profileImageUrl) {
         _log.warning('checkAndUpdateUserInfo-changed: ${found.profileImageUrl}');
-        final db = _read(rssDatabase);
-        (db.update(db.tweetUser)..where((tbl) => tbl.tweetUserId.equals(tweet.tweetUserId))).write(TweetUserCompanion(profileUrl: Value(found.profileImageUrl))).then((value) => _log.fine('checkAndUpdateUserInfo-changed: $value'));
+        final db = _ref.read(rssDatabase);
+        (db.update(db.tweetUser)..where((tbl) => tbl.tweetUserId.equals(tweet.tweetUserId)))
+            .write(TweetUserCompanion(profileUrl: Value(found.profileImageUrl)))
+            .then((value) => _log.fine('checkAndUpdateUserInfo-changed: $value'));
         tweet.profileImageUrl = found.profileImageUrl;
         tweet.invalidUrl = false;
       }
@@ -135,7 +147,7 @@ class TweetListHeader {
     _log.fine('fetchTweetUsername($id, $username)');
     assert(id != null || username != null, 'fetchTweetUsername-id or username must be valid');
     final url = 'https://api.twitter.com/2/users/${id ?? "by/username/$username"}?user.fields=profile_image_url';
-    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'});
+    final response = await network.getResponse(url, headers: {'Authorization': 'Bearer $twitterBearerToken'}, log: _log);
     if (response != null && response['data'] != null) {
       try {
         _log.info('fetchTweetUsername()-Adding user: ${response['data']}');
@@ -157,11 +169,11 @@ class TweetListHeader {
       await updateTweetsFromUser(allTweetsFromUser);
       final lastId = allTweetsFromUser.tweets.fold(tweetUser.sinceId, (int previousValue, element) => element.id > previousValue ? element.id : previousValue);
       if (lastId > tweetUser.sinceId) {
-        debugPrint('since_id update: $lastId(${tweetUser.sinceId})');
+        _log.fine('since_id update: $lastId(${tweetUser.sinceId})');
         tweetUser.sinceId = lastId;
-        final db = _read(rssDatabase);
+        final db = _ref.read(rssDatabase);
         (db.update(db.tweetUser)..where((tbl) => tbl.tweetUserId.equals(tweetUser.tweetUserId))).write(TweetUserCompanion(sinceId: Value(lastId))).then((value) => debugPrint('Updated db: $value'));
-        if (!hadTweets) playSound(soundFile: SOUND_FILE.soundNewTweet);
+        if (!hadTweets) playSound(soundFile: SoundFile.soundNewTweet);
       } else {
         debugPrint('since_id, no update: $lastId');
       }
@@ -171,7 +183,7 @@ class TweetListHeader {
   Future<void> addNewUser(TweetUserEncode newUser) async {
     if (!tweetUsers.any((element) => element.id == newUser.id)) {
       _addNewSortedUser(newUser);
-      newUser.id = await _read(rssDatabase).insertTweetUser(newUser.toTweetUserCompanionInsert());
+      newUser.id = await _ref.read(rssDatabase).insertTweetUser(newUser.toTweetUserCompanionInsert());
     } else {
       debugPrint('addNewUser($newUser)-exist');
     }
@@ -185,7 +197,7 @@ class TweetListHeader {
         // if (newItems++ == 0 && Platform.isWindows) debugPrint('powershellBeep()');
         _log.info('updateTweetsFromUser(${tweetFullDecode.tweets[i]})-new');
         // tweets.insert(0, newTweetsReceived[i]);
-        _read(rssDatabase).insertTweet(tweetFullDecode.tweets[i]).then((value) => _insertNewTweetToList(tweetFullDecode.tweets[i]));
+        _ref.read(rssDatabase).insertTweet(tweetFullDecode.tweets[i]).then((value) => _insertNewTweetToList(tweetFullDecode.tweets[i]));
         // _listTweetKey.currentState!.insertItem(tweets.length - 1, duration: Duration(milliseconds: 500));
         // await Future.delayed(Duration(milliseconds: 200));
       } else {
@@ -206,12 +218,13 @@ class TweetListHeader {
   }
 
   Future<void> removeTweet(int twitterId) async {
-    _read(rssDatabase).updateTweetStatus(twitterId);
+    _ref.read(rssDatabase).updateTweetStatus(twitterId);
     final index = tweets.indexWhere((element) => element.id == twitterId);
     if (index >= 0) {
       _log.info('removeTweet($twitterId)-removed');
       final cachedItem = tweets[index];
-      _listTweetKey.currentState!.removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: TwitterWidget.tweetContainer(context, _read, cachedItem)), duration: const Duration(milliseconds: 500));
+      _listTweetKey.currentState!
+          .removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: TwitterWidget.tweetContainer(context, cachedItem)), duration: const Duration(milliseconds: 500));
       tweets.removeAt(index);
     } else {
       _log.warning('removeTweet($twitterId)-Invalid id');

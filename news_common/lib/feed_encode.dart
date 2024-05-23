@@ -2,14 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:news_common/news_common.dart';
 
 class FeedEncodeBase {
-  FeedEncodeBase({required this.title, required this.url, required this.ttl, required this.lastCheck, required this.lastBuildDate, required this.pubDate, this.description, this.link, this.id, this.category, this.feedFav, this.language});
+  FeedEncodeBase(
+      {required this.title,
+      required this.url,
+      required this.ttl,
+      required this.lastCheck,
+      required this.lastBuildDate,
+      required this.pubDate,
+      this.description,
+      this.link,
+      this.id,
+      this.category,
+      this.feedFav,
+      this.language});
   static const ttlDefault = 30;
   int? id;
-  final int lastBuildDate, pubDate;
+  final int pubDate;
   String title, url;
   final String? category, link, language;
   String? feedFav, description, lastError;
-  int ttl, lastCheck;
+  int ttl, lastBuildDate, lastCheck;
   int get earliestMillisecondsSinceEpoch => lastCheck + ttl * 60000;
   factory FeedEncodeBase.fromJson(Map<String, dynamic> json) {
     try {
@@ -63,7 +75,18 @@ class FeedEncodeBase {
 }
 
 class ArticleEncodeBase extends NewsItem {
-  ArticleEncodeBase({required this.id, required this.parent, required this.title, required this.pubDate, required this.url, this.creator, this.description, this.encoded, this.category, required this.guid, this.active = true});
+  ArticleEncodeBase(
+      {required this.id,
+      required this.parent,
+      required this.title,
+      required this.pubDate,
+      required this.url,
+      this.creator,
+      this.description,
+      this.encoded,
+      this.category,
+      required this.guid,
+      this.active = true});
   @override
   int id;
   @override

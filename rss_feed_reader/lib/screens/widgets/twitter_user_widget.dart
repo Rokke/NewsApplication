@@ -6,17 +6,17 @@ import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 
 class TwitterUserWidget extends ConsumerWidget {
-  const TwitterUserWidget({Key? key}) : super(key: key);
+  const TwitterUserWidget({super.key});
   // void _editTweetUser(BuildContext context, int index, TweetListHeader tweetHead) {
   //   debugPrint('_editTweetUser($index)');
   // }
-  void _deleteTweetUser(BuildContext context, Reader read, int index, TweetListHeader tweetHead) {
+  void _deleteTweetUser(BuildContext context, WidgetRef ref, int index, TweetListHeader tweetHead) {
     debugPrint('_deleteTweetUser($index)');
-    final _removeItem = _createListItem(context, read, tweetHead, index);
-    tweetHead.tweetUserKey.currentState?.removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: _removeItem));
-    final db = read(rssDatabase);
+    final removeItem = _createListItem(context, ref, tweetHead, index);
+    tweetHead.tweetUserKey.currentState?.removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: removeItem));
+    final db = ref.read(rssDatabase);
 
-    (db.delete(db.tweetUser)..where((tbl) => tbl.id.equals(tweetHead.tweetUsers[index].id))).go();
+    (db.delete(db.tweetUser)..where((tbl) => tbl.id.equals(tweetHead.tweetUsers[index].id!))).go();
     tweetHead.tweetUsers.removeAt(index);
   }
 
@@ -31,7 +31,7 @@ class TwitterUserWidget extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(color: const Color(0x8F5E35B1), child: Center(child: Text('${tweetUser.name}(${tweetUser.username})', style: Theme.of(context).textTheme.subtitle2))),
+            Container(color: const Color(0x8F5E35B1), child: Center(child: Text('${tweetUser.name}(${tweetUser.username})', style: Theme.of(context).textTheme.titleSmall))),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -39,7 +39,7 @@ class TwitterUserWidget extends ConsumerWidget {
                 Flexible(
                   child: Text(
                     tweetUser.name,
-                    style: Theme.of(context).textTheme.caption,
+                    style: Theme.of(context).textTheme.bodySmall,
                     // linkStyle: Theme.of(context).textTheme.caption!.copyWith(color: Colors.red),
                     // style: Theme.of(context).textTheme.caption!.copyWith(color: Colors.black),
                   ),
@@ -81,12 +81,12 @@ class TwitterUserWidget extends ConsumerWidget {
     return AnimatedList(
       initialItemCount: tweetHead.tweetUsers.length,
       itemBuilder: (BuildContext context, int index, animation) {
-        return SizeTransition(sizeFactor: animation, child: _createListItem(context, ref.read, tweetHead, index));
+        return SizeTransition(sizeFactor: animation, child: _createListItem(context, ref, tweetHead, index));
       },
       key: tweetHead.tweetUserKey,
     );
   }
 
-  Widget _createListItem(BuildContext context, Reader read, TweetListHeader tweetHead, int index) =>
-      tweetUserContainer(context, tweetHead.tweetUsers[index], onRefresh: () => tweetHead.refreshTweetsFromUser(tweetHead.tweetUsers[index]), onDelete: () => _deleteTweetUser(context, read, index, tweetHead));
+  Widget _createListItem(BuildContext context, WidgetRef ref, TweetListHeader tweetHead, int index) => tweetUserContainer(context, tweetHead.tweetUsers[index],
+      onRefresh: () => tweetHead.refreshTweetsFromUser(tweetHead.tweetUsers[index]), onDelete: () => _deleteTweetUser(context, ref, index, tweetHead));
 }

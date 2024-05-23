@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
 
 class SettingsScreen extends ConsumerWidget {
-  SettingsScreen({Key? key}) : super(key: key);
+  SettingsScreen({super.key});
   final txtSecret = TextEditingController();
   final txtLogpath = TextEditingController();
   void _save(BuildContext context, ApplicationConfiguration config, String secret, String logpath) {

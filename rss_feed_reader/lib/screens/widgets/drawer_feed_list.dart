@@ -9,7 +9,7 @@ import 'package:rss_feed_reader/screens/widgets/twitter_user_widget.dart';
 class DrawerListItems extends ConsumerWidget {
   final List<FeedEncode> feeds;
   final _scrollController = ScrollController();
-  DrawerListItems(this.feeds, {Key? key}) : super(key: key);
+  DrawerListItems(this.feeds, {super.key});
   final ValueNotifier<bool> feedSelected = ValueNotifier(true);
 
   @override

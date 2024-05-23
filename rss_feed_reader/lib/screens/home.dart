@@ -1,13 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:resizable_widget/resizable_widget.dart';
 import 'package:rss_feed_reader/models/rss_tree.dart';
 import 'package:rss_feed_reader/screens/widgets/appbar_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/article_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/details_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/feed_widget.dart';
-import 'package:rss_feed_reader/screens/widgets/twitter_widget.dart';
+import 'package:window_manager/window_manager.dart';
 
 final applicationVersionProvider = FutureProvider<PackageInfo>((ref) {
   final rss = ref.watch(rssProvider);
@@ -41,7 +44,7 @@ final applicationVersionProvider = FutureProvider<PackageInfo>((ref) {
 // }
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -52,33 +55,41 @@ class HomeScreen extends ConsumerWidget {
       drawer: SizedBox(width: screenWidth < 500 ? screenWidth / 1.15 : 500, child: const Drawer(child: FeedView())),
       appBar: appVersionFuture.when(
         data: (appVersion) => PreferredSize(
-          preferredSize: const Size.fromHeight(50),
+          preferredSize: Size.fromHeight(Platform.isWindows ? 30 : 56),
           child: CustomAppBarWidget(appVersion),
         ),
         loading: () => AppBar(
           title: const Text('Starter...'),
-          actions: const [CircularProgressIndicator()],
+          actions: [
+            const CircularProgressIndicator(),
+            IconButton(
+                icon: const Icon(Icons.exit_to_app),
+                onPressed: () {
+                  windowManager.close();
+                  exit(0);
+                }),
+          ],
         ),
-        error: (_, __) => AppBar(title: const Text('RSS Oversikt')),
+        error: (_, __) => AppBar(title: const Text('RSS Oversikt'), actions: [
+          IconButton(
+              icon: const Icon(Icons.exit_to_app),
+              onPressed: () {
+                windowManager.close();
+                exit(0);
+              }),
+        ]),
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) => constraints.maxHeight > 700
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(height: constraints.maxHeight / 3, child: const ArticleView()),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        DetailWidget(),
-                        Positioned(right: 0, bottom: 15, child: Container(constraints: BoxConstraints.tightFor(width: TwitterWidget.twitterListWidth, height: constraints.maxHeight - constraints.maxHeight / 3 - 60), child: const TwitterWidget())),
-                      ],
-                    ),
-                  )
-                ],
-              )
-            : const ArticleView(),
-      ),
+      body: MediaQuery.of(context).size.height > 700
+          ? ResizableWidget(
+              separatorSize: 3,
+              isHorizontalSeparator: true,
+              percentages: const [0.4, 0.6],
+              children: const [
+                ArticleView(),
+                DetailStackWidget(),
+              ],
+            )
+          : const ArticleView(),
     );
   }
 }

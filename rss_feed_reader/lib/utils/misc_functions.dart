@@ -1,7 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:win32/win32.dart';
 
 String padDateNumber(int val) => val.toString().padLeft(2, '0');
@@ -34,11 +35,12 @@ String smartDateTime(DateTime dt) {
   }
 }
 
-String timeFormat(DateTime dt, {bool ignoreSeconds = false}) => '${dt.hour.toString().padLeft(2, "0")}:${dt.minute.toString().padLeft(2, "0")}${ignoreSeconds ? '' : ':' + dt.second.toString().padLeft(2, "0")}';
+String timeFormat(DateTime dt, {bool ignoreSeconds = false}) =>
+    '${dt.hour.toString().padLeft(2, "0")}:${dt.minute.toString().padLeft(2, "0")}${ignoreSeconds ? '' : ':${dt.second.toString().padLeft(2, "0")}'}';
 
 String fetchHostUrl(String fullLink) {
   String url;
-  final link = fullLink + '/';
+  final link = '$fullLink/';
   try {
     if (link.toLowerCase().startsWith('https')) {
       url = 'https://';
@@ -59,12 +61,15 @@ String fetchHostUrl(String fullLink) {
 }
 
 Future<void> launchURL(String url) async {
-  final completeUrl = url.startsWith('http') ? url : 'http://$url';
-  if (await canLaunch(completeUrl)) {
-    await launch(completeUrl);
-  } else {
-    throw 'Could not launch $url';
-  }
+  const chromePath = r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe";
+  // final uri = Uri.parse(url.startsWith('http') ? url : 'http://$url');
+  Process.start(chromePath, [url.startsWith('http') ? url : 'http://$url']);
+  // final completeUrl = Uri.parse('$chromePath $uri');
+  // if (await canLaunchUrl(completeUrl)) {
+  //   await launchUrl(completeUrl);
+  // } else {
+  //   throw 'Could not launch $completeUrl';
+  // }
 }
 
 // void powershellBeep() {
@@ -84,27 +89,27 @@ void showSnackbar(BuildContext context, String text, {IconData? icon = Icons.inf
                 padding: const EdgeInsets.only(right: 8.0),
                 child: Icon(icon),
               ),
-            Text(text, style: textStyle ?? Theme.of(context).textTheme.bodyText1),
+            Text(text, style: textStyle ?? Theme.of(context).textTheme.bodyLarge),
           ],
         ),
         backgroundColor: color,
       ),
     );
 
-Future<void> playSound({required SOUND_FILE soundFile, Logger? log}) async {
+Future<void> playSound({required SoundFile soundFile, Logger? log}) async {
   debugPrint('playSound($soundFile)');
   if (log != null) log.fine('playSound: $soundFile: ${soundFile.path}');
-  debugPrint('test: ${compute(playSoundIsolate, soundFile.path)}');
+  compute(playSoundIsolate, soundFile.path);
   debugPrint('playSound func finished');
 }
 
-enum SOUND_FILE { soundNewTweet, soundNewItem }
+enum SoundFile { soundNewTweet, soundNewItem }
 
-extension SoundPath on SOUND_FILE {
+extension SoundPath on SoundFile {
   String get _pathExtra => kDebugMode ? '' : 'data/flutter_assets/';
   String get path {
     switch (this) {
-      case SOUND_FILE.soundNewItem:
+      case SoundFile.soundNewItem:
         return '${_pathExtra}assets/sounds/article.wav';
       default:
         return '${_pathExtra}assets/sounds/twitter.wav';

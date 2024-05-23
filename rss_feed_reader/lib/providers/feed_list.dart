@@ -1,9 +1,9 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
-import 'package:moor/moor.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/feed_encode.dart';
 import 'package:rss_feed_reader/providers/network.dart' as network;
@@ -64,7 +64,7 @@ class FeedListHeader {
     feeds = (await db.feeds()).map((e) => FeedEncode.fromDB(e)).toList();
     for (final feed in feeds) {
       feed.activeArticles = (await db.fetchActiveArticles(feed.id!)).map<ArticleActiveRead>((f) => ArticleActiveRead(id: f.id, url: f.url, lastFoundEpoch: lastFound)).toList();
-      debugPrint('active({$feed.id}): ${feed.activeArticles.length}');
+      _log.finest('active(${feed.id}): ${feed.activeArticles.length}');
     }
     articles = (await db.articles()).map((e) => ArticleEncode.fromDB(e, feeds)).toList();
     debugPrint('_init(), feeds from db: ${feeds.length}');
@@ -86,7 +86,7 @@ class FeedListHeader {
       await updateOrCreateFeed(feeds[oldest]);
       return true;
     } else {
-      _log.finer('Nothing to update');
+      _log.finest('Nothing to update');
     }
     return false;
   }
@@ -158,18 +158,20 @@ class FeedListHeader {
     articles.insert(sortedIndex, article);
     _listArticleKey.currentState?.insertItem(sortedIndex);
     _updateAmountOfShownArticles();
+    if (selectedArticleIndexNotifier.value < 0) selectedArticleIndexNotifier.value = sortedIndex;
   }
 
-  Future<void> _addNewArticle(ArticleEncode article) async {
+  Future<bool> _addNewArticle(ArticleEncode article) async {
     assert(article.parent.id != null, "article can't be inserted with invalid parent.id");
     try {
       await db.insertArticle(article.toInsertCompanion).then((value) {
         article.id = value;
         _log.info('_addNewArticle(${article.url})-$value,${article.active}');
         _addNewArticleToList(article);
-        (article.parent as FeedEncode).activeArticles.add(ArticleActiveRead(id: article.id, url: article.url, lastFoundEpoch: DateTime.now().millisecondsSinceEpoch));
+        // (article.parent as FeedEncode).activeArticles.add(ArticleActiveRead(id: article.id, url: article.url, lastFoundEpoch: DateTime.now().millisecondsSinceEpoch));
+        return true;
       }).onError((error, stackTrace) async {
-        final found = await (db.select(db.article)..where((tbl) => tbl.parent.equals(article.parent.id) & tbl.url.equals(article.url))).getSingleOrNull();
+        final found = await (db.select(db.article)..where((tbl) => tbl.parent.equals(article.parent.id!) & tbl.url.equals(article.url))).getSingleOrNull();
         if (found != null) {
           _log.warning('_addNewArticle()-Duplicate error: $error, found: ${found.id}');
           await (db.update(db.article)..where((tbl) => tbl.id.equals(found.id))).write(const ArticleCompanion(active: Value(true)));
@@ -179,10 +181,12 @@ class FeedListHeader {
         } else {
           _log.severe('_addNewArticle()-Different error?: $error');
         }
+        return false;
       });
     } catch (err) {
       _log.warning('_addNewArticle()-Article exist! $article, $err');
     }
+    return false;
   }
 
   Future<void> updateOrCreateFeed(FeedEncode? feed, {String? imgUrl, String? url}) async {
@@ -191,6 +195,7 @@ class FeedListHeader {
     try {
       feed?.lastError = null;
       final feedFullEncode = await fetchFeedEncode(feed?.url ?? url!, parentFeed: feed);
+      debugPrint('updateOrCreateFeed(${feedFullEncode?.feed})-${feedFullEncode?.articles.length},${feedFullEncode?.feed.activeArticles.length}');
       if (feedFullEncode != null) {
         final updatedFeed = feed?.id != null ? feed! : feedFullEncode.feed;
         // int newId;
@@ -211,36 +216,48 @@ class FeedListHeader {
           _log.info('updateOrCreateFeed()-update lastCheck on feed(${updatedFeed.id})');
           assert(updatedFeed.id != null);
           updatedFeed.lastCheck = feedFullEncode.feed.lastCheck;
+          updatedFeed.lastBuildDate = feedFullEncode.feed.lastBuildDate;
           _log.info('updateOrCreateFeed(): ${await db.updateFeed(updatedFeed.id!, FeedCompanion(lastCheck: Value(updatedFeed.lastCheck)))}');
         }
         _log.finer('update/add-Feed: ${updatedFeed.id}');
-        final lastEpoch = DateTime.now().millisecondsSinceEpoch;
-        var newArticles = 0;
-        for (var i = 0; i < feedFullEncode.articles.length; i++) {
-          final article = feedFullEncode.articles[i];
-          if (article.url.isNotEmpty) {
-            final foundArticle = updatedFeed.activeArticles.indexWhere((element) => element.url.compareTo(article.url) == 0);
-            if (foundArticle < 0) {
-              _log.fine('Adding new item: ${article.title}(${article.url})');
-              newArticles++;
-              await _addNewArticle(article);
+        try {
+          final lastEpoch = DateTime.now().millisecondsSinceEpoch;
+          int newArticles = 0;
+          final saveOnlyCategories = await db.fetchCategories(updatedFeed.id!);
+          for (final article in feedFullEncode.articles) {
+            if (saveOnlyCategories.isNotEmpty && !saveOnlyCategories.any((element) => article.category?.contains(element.$2) ?? false)) {
+              _log.info('Ignoring item: ${article.id}-${article.title}(${article.url}), wrong category: ${article.category}');
+            } else if (article.url.isNotEmpty) {
+              final foundArticle = updatedFeed.activeArticles.indexWhere((element) => element.url.compareTo(article.url) == 0);
+              if (foundArticle < 0) {
+                _log.info('Adding new item: ${article.title}(${article.url})');
+                newArticles++;
+                await _addNewArticle(article);
+              } else {
+                updatedFeed.activeArticles[foundArticle].lastFoundEpoch = lastEpoch;
+                _log.finer('updateOrCreateFeed()-update lastFoundEpoch on article($updatedFeed)');
+              }
             } else {
-              updatedFeed.activeArticles[foundArticle].lastFoundEpoch = lastEpoch;
+              _log.warning('Ignoring empty item: ${article.guid}');
             }
-          } else {
-            _log.warning('Ignoring empty item: ${article.guid}');
           }
+          _log.fine('Finished with ${feedFullEncode.articles.length} articles, new: $newArticles');
+          int indexToRemove = -1;
+          final batchIds = <int>[];
+          while ((indexToRemove = updatedFeed.activeArticles.indexWhere((element) => element.lastFoundEpoch < lastEpoch)) >= 0) {
+            batchIds.add(updatedFeed.activeArticles[indexToRemove].id);
+            updatedFeed.activeArticles.removeAt(indexToRemove);
+          }
+          await db.removeActiveStatus(batchIds);
+          if (!hasFeeds && newArticles > 0) {
+            playSound(soundFile: SoundFile.soundNewItem, log: _log);
+          }
+          _log.info('Still active($hasFeeds, $newArticles): ${updatedFeed.activeArticles.map((e) => e.id).join(",")}, new: $newArticles');
+        } catch (err) {
+          _log.severe('updateOrCreateFeed()-Error: $err');
         }
-        var indexToRemove = -1;
-        final batchIds = <int>[];
-        while ((indexToRemove = updatedFeed.activeArticles.indexWhere((element) => element.lastFoundEpoch < lastEpoch)) >= 0) {
-          batchIds.add(updatedFeed.activeArticles[indexToRemove].id);
-          updatedFeed.activeArticles.removeAt(indexToRemove);
-        }
-        await db.removeActiveStatus(batchIds);
-        if (!hasFeeds && newArticles > 0) playSound(soundFile: SOUND_FILE.soundNewItem, log: _log);
-        _log.info('Still active: ${updatedFeed.activeArticles.map((e) => e.id).join(",")}, new: $newArticles');
       } else {
+        _log.warning('No feed found for: $url');
         feed?.lastCheck = DateTime.now().millisecondsSinceEpoch;
       }
     } on SocketException catch (err) {
@@ -260,9 +277,14 @@ class FeedListHeader {
   Future<bool> updateFeedInfo(FeedEncode feed, {String? feedFav, String? title, String? url, int? ttl}) async {
     _log.info('updateFeedInfo($feed, $feedFav, $title, $url, $ttl)-${feed.id}');
     if (feed.id != null) {
-      (db.update(db.feed)..where((tbl) => tbl.id.equals(feed.id))).write(FeedCompanion(feedFav: _valueOrAbsent(feedFav, feed.feedFav), title: _valueOrAbsent(title, feed.title), url: _valueOrAbsent(url, feed.url), ttl: _valueOrAbsent(ttl, feed.ttl))).then(
+      (db.update(db.feed)..where((tbl) => tbl.id.equals(feed.id!)))
+          .write(FeedCompanion(feedFav: _valueOrAbsent(feedFav, feed.feedFav), title: _valueOrAbsent(title, feed.title), url: _valueOrAbsent(url, feed.url), ttl: _valueOrAbsent(ttl, feed.ttl)))
+          .then(
         (value) {
-          if (value != 1) _log.warning('updateFeedInfo-!Changed: ${feed.id}, $value, ${FeedCompanion(feedFav: _valueOrAbsent(feedFav, feed.feedFav), title: _valueOrAbsent(title, feed.title), url: _valueOrAbsent(url, feed.url), ttl: _valueOrAbsent(ttl, feed.ttl))}');
+          if (value != 1) {
+            _log.warning(
+                'updateFeedInfo-!Changed: ${feed.id}, $value, ${FeedCompanion(feedFav: _valueOrAbsent(feedFav, feed.feedFav), title: _valueOrAbsent(title, feed.title), url: _valueOrAbsent(url, feed.url), ttl: _valueOrAbsent(ttl, feed.ttl))}');
+          }
         },
       );
       feed.feedFav = feedFav ?? feed.feedFav;
@@ -275,7 +297,8 @@ class FeedListHeader {
   }
 
   void _removeArticleFromList(ArticleEncode article, int index) {
-    _listArticleKey.currentState!.removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: ArticleListItem.articleContainer(context, article)), duration: const Duration(milliseconds: 500));
+    _listArticleKey.currentState!
+        .removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: ArticleListItem.articleContainer(context, article)), duration: const Duration(milliseconds: 500));
     articles.removeAt(index);
   }
 

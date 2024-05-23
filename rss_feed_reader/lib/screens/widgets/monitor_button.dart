@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rss_feed_reader/models/rss_tree.dart';
 
 class MonitorButton extends ConsumerWidget {
-  const MonitorButton({Key? key}) : super(key: key);
+  const MonitorButton({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

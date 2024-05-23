@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,26 +8,30 @@ import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/rss_tree.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
+import 'package:rss_feed_reader/providers/ipchecks.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 
 const defaultPort = kDebugMode ? 3344 : 3344;
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
 const codeAlreadyConnected = -99;
-const blockedIP = ['45.'];
+// const blockedIP = ['45.', '89'];
 
 final providerSocketServer = Provider<SocketServerHandler>((ref) {
   final config = ref.watch(providerConfig);
-  Logger('providerSocketServer').info('rebuild');
-  final ret = SocketServerHandler(ref.read, secret: config.socketSecret);
-  ref.onDispose(() => ret.dispose());
+  Logger('providerSocketServer').info('rebuild($config)');
+  final ret = SocketServerHandler(ref, secret: config.socketSecret);
+  ref.onDispose(() {
+    Logger('providerSocketServer').info('dispose');
+    ret.dispose();
+  });
   return ret;
 });
 
 class SocketServerHandler {
   final _log = Logger('SocketServerHandler');
   final int port;
-  final Reader read;
+  final Ref ref;
   ServerSocket? _serverSocket;
   String clientVersion = '';
   final String _secret;
@@ -37,21 +40,25 @@ class SocketServerHandler {
   Socket? _clientSocket;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
   String get clientIP => _clientSocket?.remoteAddress.address ?? '?';
-  SocketServerHandler(this.read, {this.port = defaultPort, required String secret}) : _secret = secret {
+  SocketServerHandler(this.ref, {this.port = defaultPort, required String secret}) : _secret = secret {
     _startListener();
   }
   Future<void> _startListener() async {
-    if (_serverSocket == null) {
-      if (_secret.isNotEmpty) {
-        _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, port);
-        _serverSocket?.listen(_newConnection, onDone: _serverDone, onError: _serverError);
-        _log.fine('_startListener');
+    try {
+      if (_serverSocket == null) {
+        if (_secret.isNotEmpty) {
+          _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+          _serverSocket?.listen(_newConnection, onDone: _serverDone, onError: _serverError);
+          _log.fine('_startListener');
+        } else {
+          isConnected.value = null;
+          _log.info('_startListener()-not configured');
+        }
       } else {
-        isConnected.value = null;
-        _log.info('_startListener()-not configured');
+        _log.info('_startListener()-already active');
       }
-    } else {
-      _log.info('_startListener()-already active');
+    } catch (err) {
+      _log.warning('_startListener()-unable to start', err);
     }
   }
 
@@ -61,11 +68,11 @@ class SocketServerHandler {
   }
 
   void _serverDone() {
-    debugPrint('_serverDone');
+    _log.info('_serverDone');
   }
 
   void _serverError(err) {
-    debugPrint('_serverError($err)');
+    _log.warning('_serverError($err)', err);
   }
 
   void _closeServerListener() {
@@ -75,20 +82,24 @@ class SocketServerHandler {
   }
 
   void _newConnection(Socket socket) {
-    if (_clientSocket == null) {
+    _log.fine('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - newConnection');
+    final ipCheck = ref.read(providerIPChecks);
+    if (_clientSocket == null && ipCheck != null) {
       _closeServerListener();
-      if (blockedIP.any((element) {
-        debugPrint('IP: ${socket.remoteAddress.address} - $element');
-        return socket.remoteAddress.address.startsWith(element) != false;
-      })) {
+      final chk = ipCheck.checkConnectionBlocked(socket);
+      if (chk != null && chk.block) {
         _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Blocked IP trying to connect');
         socket.destroy();
       } else {
+        if (chk == null) {
+          ipCheck.addNewConnection(socket);
+        } else {
+          _log.info('_newConnection(${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort})');
+        }
         _clientSocket = socket;
-        _log.info('_newConnection(${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort})');
         _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
         _clientSocket?.write('$socketHeadHello$socketVersion');
-        debugPrint('SENT: $socketHeadHello$socketVersion');
+        _log.fine('SENT: $socketHeadHello$socketVersion');
         isConnected.value = _clientSocket != null;
         _clientSocket?.flush();
       }
@@ -133,7 +144,7 @@ class SocketServerHandler {
   void _selectAndSendTweet({int tweetIndex = 0}) {
     assert(tweetIndex >= -1 && tweetIndex <= 1, 'Invalid tweetIndex: $tweetIndex');
     _log.info('_selectAndSendTweet($tweetIndex)');
-    final tweetProvider = read(providerTweetHeader);
+    final tweetProvider = ref.read(providerTweetHeader);
     if (tweetProvider.tweets.isEmpty) {
       _log.info('_selectAndSendTweet - no unread tweets');
       _clientSendData(_createJSON(code: -2, data: 'No tweets'));
@@ -149,7 +160,7 @@ class SocketServerHandler {
   Future<void> _selectAndSendFeed({int changeIndex = 0}) async {
     _log.info('_selectAndSendFeed($changeIndex)');
     assert(changeIndex >= -1 || changeIndex <= 1, 'Invalid changeIndex: $changeIndex');
-    final feedProvider = read(providerFeedHeader);
+    final feedProvider = ref.read(providerFeedHeader);
     if (feedProvider.selectedArticle == null) {
       feedProvider.changeSelectedArticle = 0;
     } else if (changeIndex == -1) {
@@ -158,7 +169,7 @@ class SocketServerHandler {
       feedProvider.selectNextArticle();
     }
     if (feedProvider.selectedArticle != null) {
-      await feedProvider.selectedArticle!.articleDescription(read(rssDatabase));
+      await feedProvider.selectedArticle!.articleDescription(ref.read(rssDatabase));
       _clientSendData(_createJSON(code: 1, data: feedProvider.selectedArticle!.toJson()));
     } else {
       _log.info('_selectAndSendFeed - no unread feeds');
@@ -167,8 +178,8 @@ class SocketServerHandler {
   }
 
   Map<String, dynamic> _createJSON({required int code, required dynamic data}) {
-    final feedProvider = read(providerFeedHeader);
-    final tweetProvider = read(providerTweetHeader);
+    final feedProvider = ref.read(providerFeedHeader);
+    final tweetProvider = ref.read(providerTweetHeader);
     return {
       'code': code,
       'data': data,
@@ -176,7 +187,7 @@ class SocketServerHandler {
       'articleIndex': feedProvider.selectedArticleIndexNotifier.value,
       'tweetCount': tweetProvider.tweets.length,
       'tweetIndex': currentTweetIndex,
-      'running': read(monitoringRunning.notifier).state,
+      'running': ref.read(monitoringRunning.notifier).state,
     };
   }
 
@@ -184,17 +195,27 @@ class SocketServerHandler {
     final utfString = utf8.decode(data);
     _log.info('_clientDataReceived($utfString)');
     if (isConnected.value == false || clientVersion.isEmpty) {
-      if (utfString.startsWith(socketHeadHello) && utfString.endsWith('.$_secret')) {
-        clientVersion = utfString.split('$socketHeadHello:').last.split('.').first;
-        isConnected.value = _clientSocket != null;
-        debugPrint('Connected: $clientVersion, ${isConnected.value}');
-        _selectAndSendFeed();
+      final ipCheck = ref.read(providerIPChecks);
+      final found = _clientSocket != null ? ipCheck?.checkConnectionBlocked(_clientSocket!) : null;
+      if (found != null) {
+        if (utfString.startsWith(socketHeadHello) && utfString.endsWith('.$_secret')) {
+          ipCheck!.ipConnectedOK(found);
+          clientVersion = utfString.split('$socketHeadHello:').last.split('.').first;
+          isConnected.value = _clientSocket != null;
+          _log.info('Connected: $clientVersion, ${isConnected.value}');
+          _selectAndSendFeed();
+        } else {
+          if (_clientSocket != null) ipCheck?.blockIP(found);
+          _log.warning('Invalid client request: "$utfString" != "$socketHeadHello"');
+          _log.warning('_clientDataReceived, newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid header. Stopping server - $utfString');
+          _closeClient();
+          isConnected.value = null;
+          Future.delayed(const Duration(minutes: 30), _startListener);
+        }
       } else {
-        debugPrint('Invalid client request: "$utfString" != "$socketHeadHello"');
-        _log.warning('_newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid header. Stopping server - $utfString');
+        _log.severe('_clientDataReceived, _newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid block provider');
         _closeClient();
         isConnected.value = null;
-        Future.delayed(const Duration(hours: 1), _startListener);
       }
     } else {
       debugPrint('decode');
@@ -202,7 +223,7 @@ class SocketServerHandler {
       debugPrint('decoded: $json');
       switch (json['command']) {
         case 'start_monitor':
-          read(rssProvider).startMonitoring();
+          ref.read(rssProvider).startMonitoring();
           break;
         case 'previous_feed':
           _selectAndSendFeed(changeIndex: -1);
@@ -223,7 +244,7 @@ class SocketServerHandler {
           _selectAndSendTweet();
           break;
         case 'tweet_read':
-          final tweetProvider = read(providerTweetHeader);
+          final tweetProvider = ref.read(providerTweetHeader);
           final id = json['id'] as int;
           if (id >= 0) {
             tweetProvider.removeTweet(id);
@@ -231,7 +252,7 @@ class SocketServerHandler {
           }
           break;
         case 'article_read':
-          final feedProvider = read(providerFeedHeader);
+          final feedProvider = ref.read(providerFeedHeader);
           final id = json['id'] as int;
           if (id >= 0) {
             feedProvider.changeArticleStatusById(id: id);
