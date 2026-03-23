@@ -3,10 +3,11 @@ description: News client application
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.1+5
+version: 1.1.0+6
 
 environment:
-  sdk: ">=2.18.0 <4.0.0"
+  sdk: ^3.7.0-323.2.beta
+#  sdk: ">=2.18.0 <4.0.0"
 
 dependencies:
   cached_network_image:

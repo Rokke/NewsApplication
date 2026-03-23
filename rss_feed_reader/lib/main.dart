@@ -49,6 +49,8 @@ Future<void> main() async {
     await windowManager.ensureInitialized();
     windowManager.waitUntilReadyToShow().then((_) async {
       await windowManager.setTitleBarStyle(TitleBarStyle.hidden, windowButtonVisibility: false);
+      await windowManager.setSize(appConfig.windowSize);
+      await windowManager.setPosition(appConfig.windowPosition);
     });
   }
   runApp(

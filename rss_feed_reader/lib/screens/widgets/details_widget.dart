@@ -40,30 +40,30 @@ class DetailWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     debugPrint('Details build');
     final feedProvider = ref.watch(providerFeedHeader);
-    return Card(
-      child: Container(
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-        child: ValueListenableBuilder(
-          valueListenable: feedProvider.selectedArticleIndexNotifier,
-          builder: (context, int selectedIndex, child) => selectedIndex >= 0
-              ? KeyboardListener(
-                  focusNode: FocusNode(),
-                  autofocus: true,
-                  onKeyEvent: (KeyEvent event) {
-                    // if (event.runtimeType.toString() == 'onKeyEvent') {
-                    switch (event.logicalKey) {
-                      case LogicalKeyboardKey.delete:
-                        feedProvider.changeArticleStatusByIndex(index: selectedIndex);
-                        break;
-                      case LogicalKeyboardKey.arrowDown:
-                        feedProvider.selectNextArticle();
-                        break;
-                      case LogicalKeyboardKey.arrowUp:
-                        feedProvider.selectPreviousArticle();
-                        break;
-                    }
-                  },
-                  child: Column(
+    return KeyboardListener(
+      focusNode: FocusNode(),
+      autofocus: true,
+      onKeyEvent: (KeyEvent event) {
+        // if (event.runtimeType.toString() == 'onKeyEvent') {
+        switch (event.logicalKey) {
+          case LogicalKeyboardKey.delete:
+            feedProvider.markCurrentAsRead();
+            break;
+          case LogicalKeyboardKey.arrowDown:
+            feedProvider.selectNextArticle();
+            break;
+          case LogicalKeyboardKey.arrowUp:
+            feedProvider.selectPreviousArticle();
+            break;
+        }
+      },
+      child: Card(
+        child: Container(
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+          child: ValueListenableBuilder(
+            valueListenable: feedProvider.selectedArticleIndexNotifier,
+            builder: (context, int selectedIndex, child) => selectedIndex >= 0
+                ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
@@ -105,6 +105,14 @@ class DetailWidget extends ConsumerWidget {
                                     feedProvider.changeArticleStatusByIndex(
                                         index: selectedIndex, newStatus: feedProvider.status != ArticleTableStatus.favorite ? ArticleTableStatus.favorite : ArticleTableStatus.unread);
                                   },
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.history),
+                                  onPressed: feedProvider.last10ReadArticles.isEmpty
+                                      ? null
+                                      : () {
+                                          feedProvider.showHistoryDialog(context);
+                                        },
                                 ),
                                 IconButton(
                                   icon: Icon(
@@ -180,14 +188,14 @@ class DetailWidget extends ConsumerWidget {
                         ),
                       ),
                     ],
+                  )
+                : Center(
+                    child: Text(
+                      'Ingen artikkel valgt',
+                      style: Theme.of(context).textTheme.displaySmall,
+                    ),
                   ),
-                )
-              : Center(
-                  child: Text(
-                    'Ingen artikkel valgt',
-                    style: Theme.of(context).textTheme.displaySmall,
-                  ),
-                ),
+          ),
         ),
       ),
     );

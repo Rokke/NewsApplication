@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
@@ -22,9 +22,10 @@ class FeedListHeader {
   final AppDb db;
   // final List<int> readIds = [];
   List<ArticleEncode> articles = [];
+  List<ArticleEncode> last10ReadArticles = [];
   List<FeedEncode> feeds = [];
   int status = ArticleTableStatus.unread;
-  int? _lastRemovedId;
+  // int? _lastRemovedId;
   final hasUndoItem = ValueNotifier(false);
   ValueNotifier<bool> isInitialized = ValueNotifier(false);
   ValueNotifier<int> selectedArticleIndexNotifier = ValueNotifier(-1);
@@ -131,13 +132,13 @@ class FeedListHeader {
   }
 
   bool unreadLastItem() {
-    if (_lastRemovedId != null) {
-      _log.info('unreadLastItem: $_lastRemovedId');
-      final updateId = _lastRemovedId!;
-      _lastRemovedId = null;
-      hasUndoItem.value = false;
-      db.updateArticleStatus(articleId: updateId, status: ArticleTableStatus.unread).then((value) async {
-        final articleData = await db.fetchSingleArticle(articleId: updateId);
+    if (last10ReadArticles.isNotEmpty) {
+      final unread = last10ReadArticles.removeAt(0);
+      _log.info('unreadLastItem: $unread');
+      // final updateId = last10Read;
+      hasUndoItem.value = last10ReadArticles.isNotEmpty;
+      db.updateArticleStatus(articleId: unread.id, status: ArticleTableStatus.unread).then((value) async {
+        final articleData = await db.fetchSingleArticle(articleId: unread.id);
         if (articleData != null) {
           await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
           if (selectedArticleIndexNotifier.value > -1) selectedArticleIndexNotifier.value = -1;
@@ -151,14 +152,15 @@ class FeedListHeader {
   }
 
   Future<void> _addNewArticleToList(ArticleEncode article) async {
-    var sortedIndex = articles.lastIndexWhere((element) => element.pubDate > article.pubDate);
-    if (sortedIndex == -1) sortedIndex = articles.length;
+    int sortedIndex = articles.length;
     _log.info('_addNewArticleToList(${article.url})-${article.id},${article.active}');
     (article.parent as FeedEncode).activeArticles.add(ArticleActiveRead(id: article.id, url: article.url, lastFoundEpoch: DateTime.now().millisecondsSinceEpoch));
     articles.insert(sortedIndex, article);
     _listArticleKey.currentState?.insertItem(sortedIndex);
     _updateAmountOfShownArticles();
-    if (selectedArticleIndexNotifier.value < 0) selectedArticleIndexNotifier.value = sortedIndex;
+    if (selectedArticleIndexNotifier.value < 0) {
+      selectedArticleIndexNotifier.value = sortedIndex;
+    }
   }
 
   Future<bool> _addNewArticle(ArticleEncode article) async {
@@ -299,7 +301,14 @@ class FeedListHeader {
   void _removeArticleFromList(ArticleEncode article, int index) {
     _listArticleKey.currentState!
         .removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: ArticleListItem.articleContainer(context, article)), duration: const Duration(milliseconds: 500));
-    articles.removeAt(index);
+    last10ReadArticles.insert(0, articles.removeAt(index));
+    if (last10ReadArticles.length > 10) last10ReadArticles.removeLast();
+  }
+
+  void markCurrentAsRead() {
+    if (selectedArticleIndexNotifier.value >= 0) {
+      changeArticleStatusByIndex(index: selectedArticleIndexNotifier.value);
+    }
   }
 
   void changeArticleStatusByIndex({required int index, int newStatus = ArticleTableStatus.read}) {
@@ -309,7 +318,6 @@ class FeedListHeader {
       _log.info('changeArticleStatus-remove(${articles[index].id}, $index, $newStatus)');
       db.updateArticleStatus(articleId: articles[index].id, status: newStatus);
       if (newStatus == ArticleTableStatus.read) {
-        _lastRemovedId = articles[index].id;
         hasUndoItem.value = true;
         _removeArticleFromList(articles[index], index);
       }
@@ -318,6 +326,48 @@ class FeedListHeader {
     } catch (err) {
       _log.severe('changeArticleStatus exception', err);
     }
+  }
+
+  void showHistoryDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final size = MediaQuery.sizeOf(context);
+        return AlertDialog(
+          title: const Text('History'),
+          content: SizedBox(
+            height: size.height - 200,
+            width: size.width - 200,
+            child: ListView(
+              children: last10ReadArticles
+                  .map((e) => ListTile(
+                      title: Text(e.title),
+                      subtitle: Text(e.url),
+                      trailing: IconButton(
+                          icon: const Icon(Icons.undo),
+                          onPressed: () {
+                            last10ReadArticles.remove(e);
+                            db.updateArticleStatus(articleId: e.id, status: ArticleTableStatus.unread).then((value) async {
+                              final articleData = await db.fetchSingleArticle(articleId: e.id);
+                              if (articleData != null) {
+                                await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
+                                if (selectedArticleIndexNotifier.value > -1) selectedArticleIndexNotifier.value = -1;
+                              }
+                            });
+                            Navigator.of(context).pop();
+                          })))
+                  .toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void changeArticleStatusById({required int id, int newStatus = ArticleTableStatus.read}) {

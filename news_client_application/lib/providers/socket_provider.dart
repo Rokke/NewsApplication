@@ -21,7 +21,7 @@ final providerSocket = Provider((ref) {
   });
   final config = ref.watch(providerConfig);
   debugPrint('changed config: ${config.socketServerInternal}');
-  final socket = SocketProvider(serverAddresses: [config.socketServerInternal, config.socketServerExternal], secret: config.socketSecret, autoConnectTimer: 10000);
+  final socket = SocketProvider(serverAddresses: [config.socketServerInternal, config.socketServerExternal], secret: config.socketSecret, autoConnectTimer: 60000);
   ref.onDispose(() {
     if (!socket.isDisconnected) socket.dispose();
   });
@@ -67,11 +67,11 @@ class SocketProvider {
     if (_client == null) {
       connectedAddress = null;
       try {
-        debugPrint('connect: $serverAddresses, $_secret');
+        debugPrint('connect: $serverAddresses, $_secret, $port');
         status.value = SocketStatus.waiting;
         try {
           if (indexServerTest >= serverAddresses.length) indexServerTest = 0;
-          _client = await Socket.connect(serverAddresses[indexServerTest++], port, timeout: const Duration(milliseconds: 2400));
+          _client = await Socket.connect(serverAddresses[indexServerTest++], port, timeout: const Duration(milliseconds: 5400));
         } on SocketException catch (err) {
           debugPrint('SocketConnection error: $port, $err, $_client');
         }

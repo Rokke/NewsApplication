@@ -101,6 +101,18 @@ class CustomAppBarWidget extends ConsumerWidget {
           },
         ),
         const MonitorButton(),
+        ValueListenableBuilder(
+            valueListenable: feedProvider.hasUndoItem,
+            builder: (context, hasUndo, _) {
+              return IconButton(
+                icon: const Icon(Icons.history),
+                onPressed: !hasUndo
+                    ? null
+                    : () {
+                        feedProvider.showHistoryDialog(context);
+                      },
+              );
+            }),
         IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen())), icon: const Icon(Icons.settings)),
         IconButton(
             color: Colors.red,

@@ -6,7 +6,8 @@ publish_to: "none"
 version: 3.0.0+10
 
 environment:
-  sdk: '>=3.1.0-262.2.beta <4.0.0'
+  sdk: '>=3.1.0-63.1.beta <4.0.0'
+
 dependencies:
   cached_network_image:
   collection:
@@ -41,7 +42,7 @@ dev_dependencies:
   build_runner: #^2.1.11
   drift_dev:
   # dart_style: ^2.2.3
-  icons_launcher:
+  flutter_launcher_icons:
   flutter_lints:
   flutter_test:
     sdk: flutter
@@ -52,10 +53,7 @@ flutter:
     - assets/images/twitter.png
     - assets/sounds/twitter.wav
     - assets/sounds/article.wav
-icons_launcher:
+flutter_launcher_icons:
   image_path: "assets/launcher_icon/app_icon.png"
-  platforms:
-    windows:
-      enable: true
-
-  # android: "launcher_icon"
+  windows:
+    generate: true

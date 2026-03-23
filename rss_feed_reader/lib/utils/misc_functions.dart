@@ -1,8 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:win32/win32.dart';
 
 String padDateNumber(int val) => val.toString().padLeft(2, '0');
@@ -61,15 +60,15 @@ String fetchHostUrl(String fullLink) {
 }
 
 Future<void> launchURL(String url) async {
-  const chromePath = r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe";
-  // final uri = Uri.parse(url.startsWith('http') ? url : 'http://$url');
-  Process.start(chromePath, [url.startsWith('http') ? url : 'http://$url']);
+  // const chromePath = r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe";
+  final uri = Uri.parse(url.startsWith('http') ? url : 'http://$url');
+  // Process.start(chromePath, [url.startsWith('http') ? url : 'http://$url']);
   // final completeUrl = Uri.parse('$chromePath $uri');
-  // if (await canLaunchUrl(completeUrl)) {
-  //   await launchUrl(completeUrl);
-  // } else {
-  //   throw 'Could not launch $completeUrl';
-  // }
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri);
+  } else {
+    throw 'Could not launch $uri';
+  }
 }
 
 // void powershellBeep() {
@@ -120,7 +119,7 @@ extension SoundPath on SoundFile {
 int playSoundIsolate(String soundFilename) {
   debugPrint('sound: soundFile: $soundFilename');
   final sound = TEXT(soundFilename);
-  PlaySound(sound, NULL, SND_ALIAS);
+  PlaySound(sound, NULL, SND_FLAGS.SND_ALIAS);
   free(sound);
   debugPrint('played sound');
   return 0;

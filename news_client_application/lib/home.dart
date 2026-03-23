@@ -9,7 +9,7 @@ import 'package:news_client_application/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HomePage extends ConsumerStatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  const HomePage({super.key});
 
   @override
   ConsumerState createState() => _HomePageState();
@@ -118,7 +118,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                                   width: width,
                                   child: Center(
                                     child: ElevatedButton(
-                                      style: ButtonStyle(elevation: MaterialStateProperty.resolveWith((states) => 0), shadowColor: MaterialStateProperty.all<Color>(Colors.red)),
+                                      style: ButtonStyle(elevation: WidgetStateProperty.resolveWith((states) => 0), shadowColor: WidgetStateProperty.all<Color>(Colors.red)),
                                       onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'article_read' : 'tweet_read', 'id': item.id}),
                                       child: Container(
                                         width: 100,

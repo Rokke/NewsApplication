@@ -58,7 +58,12 @@ class NewsAppNetworkException implements Exception {
 class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+    return super.createHttpClient(context)
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
+        Logger('MyHttpOverrides')
+            .warning('badCertificate()-Ignoring bad certificate: $host:$port(issuer: ${cert.issuer}, subject: ${cert.subject}, valid: ${cert.startValidity}-${cert.endValidity})', cert);
+        return true;
+      };
   }
 }
 
