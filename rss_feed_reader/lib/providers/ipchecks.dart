@@ -13,118 +13,90 @@ final providerIPChecks = Provider<IPChecks?>((ref) {
 
 class IPChecks {
   final _log = Logger('IPChecks');
-  final List<IPCheckAddress> ips;
+  final List<IPBlockEntry> blockedPrefixes;
   final String _filename;
-  final DateTime? lastUpdate;
 
-  IPChecks._(this._filename, {required this.ips, required this.lastUpdate});
+  IPChecks._(this._filename, {required this.blockedPrefixes});
+
   factory IPChecks.load(String path) {
-    final filename = '$path/rss_ipconnections.json';
+    final filename = '$path/rss_ipblocklist.json';
     final file = File(filename);
     if (file.existsSync()) {
       final json = jsonDecode(file.readAsStringSync());
       return IPChecks._(
         filename,
-        ips: (json['ips'] as List<dynamic>).map((entry) => IPCheckAddress.fromJson(entry as Map<String, dynamic>)).toList(),
-        lastUpdate: DateTime.fromMillisecondsSinceEpoch(json['lastUpdate'] ?? '0'),
+        blockedPrefixes: (json['blocked'] as List<dynamic>).map((e) => IPBlockEntry.fromJson(e as Map<String, dynamic>)).toList(),
       );
     }
-    return IPChecks._(filename, ips: ['45.', '89'].map((e) => IPCheckAddress.fromJson({'ip': e, 'ok': false, 'block': true})).toList(), lastUpdate: DateTime.now());
-  }
-  void save() {
-    File(_filename).writeAsStringSync(jsonEncode(toMap));
-  }
-
-  Map<String, dynamic> get toMap => {'version': '1.0', 'ips': ips.map((e) => e.toMap).toList(), 'lastUpdate': lastUpdate?.millisecondsSinceEpoch};
-  IPCheckAddress? checkConnectionBlocked(Socket socket) {
-    final found = _findCheck(socket);
-    if (found != null) {
-      found.increaseCount();
-      save();
+    // Also try loading legacy file format
+    final legacyFile = File('$path/rss_ipconnections.json');
+    if (legacyFile.existsSync()) {
+      final json = jsonDecode(legacyFile.readAsStringSync());
+      final entries = (json['ips'] as List<dynamic>)
+          .map((e) => e as Map<String, dynamic>)
+          .where((e) => e['block'] == true)
+          .map((e) => IPBlockEntry(prefix: e['ip'] as String, reason: 'migrated from legacy'))
+          .toList();
+      final checks = IPChecks._(filename, blockedPrefixes: entries);
+      checks.save();
+      return checks;
     }
-    return found;
+    // Default blocked prefixes
+    return IPChecks._(filename, blockedPrefixes: [
+      IPBlockEntry(prefix: '45.', reason: 'known scanner range'),
+      IPBlockEntry(prefix: '89.', reason: 'known scanner range'),
+    ])
+      ..save();
   }
 
-  IPCheckAddress? _findCheck(Socket socket) {
-    for (var element in ips) {
-      if (element.isCorrectIP(socket)) return element;
+  void save() {
+    File(_filename).writeAsStringSync(jsonEncode({
+      'version': '2.0',
+      'blocked': blockedPrefixes.map((e) => e.toMap).toList(),
+    }));
+  }
+
+  /// Returns true if the socket's IP matches a blocked prefix
+  bool isBlocked(Socket socket) {
+    final addr = socket.remoteAddress.address;
+    for (final entry in blockedPrefixes) {
+      if (addr.startsWith(entry.prefix)) {
+        _log.warning('Connection from $addr blocked (matches prefix: ${entry.prefix}, reason: ${entry.reason})');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  IPBlockEntry? checkConnectionBlocked(Socket socket) {
+    final addr = socket.remoteAddress.address;
+    for (final entry in blockedPrefixes) {
+      if (addr.startsWith(entry.prefix)) {
+        _log.warning('Connection from $addr blocked (prefix: ${entry.prefix})');
+        return entry;
+      }
     }
     return null;
   }
-
-  void ipConnectedOK(IPCheckAddress ipCheck) {
-    if (ipCheck.connectedOK()) {
-      _log.info('ipConnectedOK($ipCheck)-first time');
-      save();
-    }
-  }
-
-  void blockIP(IPCheckAddress ipCheck) {
-    _log.warning('blockIP($ipCheck)');
-    ipCheck.blockAddress();
-    save();
-  }
-
-  bool addNewConnection(Socket socket) {
-    _log.info('addNewConnection(${socket.remoteAddress}:${socket.remotePort})');
-    final newIPCheck = IPCheckAddress.fromSocket(socket);
-    final found = ips.firstWhere((element) => element == newIPCheck, orElse: IPCheckAddress.empty);
-    if (found.ip.isEmpty) {
-      ips.add(newIPCheck);
-      save();
-      return true;
-    }
-    return false;
-  }
 }
 
-class IPCheckAddress {
-  final String ip;
-  bool ok;
+class IPBlockEntry {
+  final String prefix;
+  final String reason;
   bool block;
-  int count = 0;
-  DateTime? lastConnected;
 
-  IPCheckAddress._({required this.ip, required this.ok, required this.block, required this.lastConnected});
-  void increaseCount() {
-    lastConnected = DateTime.now();
-    count++;
-  }
+  IPBlockEntry({required this.prefix, this.reason = '', this.block = true});
+
+  factory IPBlockEntry.fromJson(Map<String, dynamic> json) => IPBlockEntry(
+        prefix: json['prefix'] as String,
+        reason: json['reason'] as String? ?? '',
+      );
 
   Map<String, dynamic> get toMap => {
-        'ip': ip,
-        'ok': ok,
-        'block': block,
-        'lastConnected': lastConnected?.millisecondsSinceEpoch,
+        'prefix': prefix,
+        'reason': reason,
       };
-  void blockAddress() {
-    ok = false;
-    block = true;
-  }
-
-  bool connectedOK() {
-    if (!ok) {
-      ok = true;
-      return true;
-    }
-    return false;
-  }
-
-  factory IPCheckAddress.empty() => IPCheckAddress._(ip: '', ok: false, block: false, lastConnected: DateTime.fromMillisecondsSinceEpoch(0));
-  factory IPCheckAddress.fromSocket(Socket socket, {bool ok = false, bool block = false}) => IPCheckAddress._(ip: _fetchAddress(socket), ok: ok, block: block, lastConnected: DateTime.now());
-  factory IPCheckAddress.fromJson(Map<String, dynamic> json) => IPCheckAddress._(
-        ip: json['ip'],
-        ok: json['ok'] ?? false,
-        block: json['block'] ?? false,
-        lastConnected: DateTime.fromMillisecondsSinceEpoch(json['lastConnected'] ?? 0),
-      );
-  static String _fetchAddress(Socket socket) => socket.remoteAddress.address;
-  bool isCorrectIP(Socket socket) => _fetchAddress(socket).startsWith(ip);
-  @override
-  bool operator ==(Object other) => identical(this, other) || (other is IPCheckAddress && runtimeType == other.runtimeType && (ip.startsWith(other.ip) || other.ip.startsWith(ip)));
 
   @override
-  int get hashCode => ip.hashCode;
-  @override
-  String toString() => 'IPCheck($ip,$ok,$block,$lastConnected)';
+  String toString() => 'IPBlock($prefix, $reason)';
 }

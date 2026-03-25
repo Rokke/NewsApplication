@@ -1,20 +1,25 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/config_provider.dart';
 
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
+const _initialRetryMs = 2000;
+const _maxRetryMs = 300000; // 5 minutes
 
 final providerSocket = Provider((ref) {
+  final log = Logger('providerSocket');
   final config = ref.watch(providerConfig);
-  debugPrint('changed config: ${config.socketServerInternal}');
-  final addresses = [config.socketServerInternal, config.socketServerExternal].where((a) => a.isNotEmpty).toList();
-  final socket = SocketProvider(serverAddresses: addresses, secret: config.socketSecret, autoConnectTimer: 60000);
+  final addresses = <String>[config.socketServerInternal, config.socketServerExternal].where((a) => a.isNotEmpty).toList();
+  log.info('Config changed - addresses: $addresses');
+  final socket = SocketProvider(serverAddresses: addresses, secret: config.socketSecret);
   ref.onDispose(() {
     if (!socket.isDisconnected) socket.dispose();
   });
@@ -22,85 +27,113 @@ final providerSocket = Provider((ref) {
 });
 
 class SocketProvider {
+  final _log = Logger('SocketProvider');
   final String _secret;
-  SocketProvider({required this.serverAddresses, required String secret, this.port = kDebugMode ? 3344 : 3344, this.autoConnectTimer = 50000}) : _secret = secret {
-    assert(autoConnectTimer == 0 || autoConnectTimer > 1000, 'The autoConnectTimer must be >= 1000ms');
-    _autoConnectTimer = autoConnectTimer;
-    if (isValid) _autoConnect();
+  SocketProvider({required this.serverAddresses, required String secret, this.port = kDebugMode ? 3344 : 3344}) : _secret = secret {
+    if (isValid) {
+      _log.info('Initialized - addresses: $serverAddresses, port: $port');
+      _scheduleConnect(0);
+    } else {
+      _log.warning('Not valid - addresses: $serverAddresses, hasSecret: ${_secret.isNotEmpty}');
+    }
   }
+
   bool get isValid => serverAddresses.isNotEmpty && _secret.isNotEmpty;
   bool get isConnected => status.value == SocketStatus.connected || status.value == SocketStatus.connectedNotRunning || status.value == SocketStatus.connectedRunning;
   bool get isDisconnected => status.value == SocketStatus.disconnected;
   ValueNotifier<SocketStatus> status = ValueNotifier(SocketStatus.disconnected);
   List<String> serverAddresses;
-  int indexServerTest = 0;
+  int _addressIndex = 0;
   int dataLength = 0;
   String dataToParse = '';
   String? connectedAddress;
-  late int _autoConnectTimer;
-  int autoConnectTimer, port;
+  int port;
   String _serverVersion = '';
-  bool exit = false, waitAfterDisconnect = false;
+  bool _exit = false;
+  int _consecutiveFailures = 0;
+  int _currentRetryMs = _initialRetryMs;
   final StreamController<SocketResponse> _streamController = StreamController();
   Timer? _timer;
   Stream<SocketResponse> get stream => _streamController.stream;
   Socket? _client;
   String get serverVersion => _serverVersion;
-  Future<void> _autoConnect() async {
-    if (!exit && _autoConnectTimer > 0) {
-      if (waitAfterDisconnect || !await connect()) {
-        waitAfterDisconnect = false;
-        _timer = Timer(Duration(milliseconds: _autoConnectTimer), _autoConnect);
-      }
+
+  void _scheduleConnect(int delayMs) {
+    if (_exit) return;
+    _timer?.cancel();
+    if (delayMs <= 0) {
+      _tryConnect();
+    } else {
+      _log.fine('Next connection attempt in ${delayMs}ms (failures: $_consecutiveFailures)');
+      _timer = Timer(Duration(milliseconds: delayMs), _tryConnect);
     }
   }
 
-  Future<bool> connect() async {
-    _autoConnectTimer = 0;
-    if (_client == null) {
-      connectedAddress = null;
-      try {
-        debugPrint('connect: $serverAddresses, $_secret, $port');
-        status.value = SocketStatus.waiting;
-        try {
-          if (indexServerTest >= serverAddresses.length) indexServerTest = 0;
-          _client = await Socket.connect(serverAddresses[indexServerTest++], port, timeout: const Duration(milliseconds: 5400));
-        } on SocketException catch (err) {
-          debugPrint('SocketConnection error: $port, $err, $_client');
-        }
-        if (_client != null) {
-          connectedAddress = serverAddresses[indexServerTest - 1];
-          debugPrint('connected: $connectedAddress');
-          _client!.listen(_onData, onDone: _onDone, onError: _onError);
-          return true;
-        }
-      } catch (err) {
-        debugPrint('Err connecting: $err');
-      }
+  Future<void> _tryConnect() async {
+    if (_exit || _client != null) return;
+    connectedAddress = null;
+
+    if (_addressIndex >= serverAddresses.length) {
+      _addressIndex = 0;
+      // Completed a full cycle through all addresses — apply backoff
+      _consecutiveFailures++;
+      _currentRetryMs = min(_initialRetryMs * pow(2, _consecutiveFailures - 1).toInt(), _maxRetryMs);
+      _log.info('All addresses tried, backing off ${_currentRetryMs}ms (attempt #$_consecutiveFailures)');
+      status.value = SocketStatus.disconnected;
+      _scheduleConnect(_currentRetryMs);
+      return;
     }
-    status.value = SocketStatus.disconnected;
-    _autoConnectTimer = indexServerTest >= serverAddresses.length ? autoConnectTimer : 1000;
-    _autoConnect();
-    return false;
+
+    final address = serverAddresses[_addressIndex++];
+    _log.info('Connecting to $address:$port ($_addressIndex/${serverAddresses.length})');
+    status.value = SocketStatus.waiting;
+
+    try {
+      _client = await Socket.connect(address, port, timeout: const Duration(milliseconds: 5400));
+    } on SocketException catch (err) {
+      _log.warning('Connection failed to $address:$port', err);
+    } catch (err, stackTrace) {
+      _log.severe('Unexpected connection error', err, stackTrace);
+    }
+
+    if (_client != null) {
+      connectedAddress = address;
+      _log.info('TCP connected to $connectedAddress:$port, awaiting handshake');
+      _client!.listen(_onData, onDone: _onDone, onError: _onError);
+    } else {
+      // Try next address quickly (1s between addresses in same cycle)
+      _scheduleConnect(1000);
+    }
+  }
+
+  void _onConnectionEstablished() {
+    _consecutiveFailures = 0;
+    _currentRetryMs = _initialRetryMs;
+    _addressIndex = 0;
   }
 
   void _onError(Object error) {
-    debugPrint('onError: $error');
+    _log.warning('Socket error', error);
     disconnect();
-    _autoConnect();
+    _scheduleConnect(_currentRetryMs);
   }
 
   void _onData(List<int> data) {
-    debugPrint('onData init: ${data.length} bytes-${status.value}');
+    debugPrint('onData: ${data.length} bytes');
     final utfString = utf8.decode(data);
     if (status.value == SocketStatus.waiting) {
       if (utfString.startsWith(socketHeadHello)) {
         _serverVersion = utfString.split(socketHeadHello).last;
-        _client!.write('$socketHeadHello$socketVersion.$_secret');
-        _client!.flush();
+        _log.info('Server greeting received - version: $_serverVersion, sending auth response');
+        final authResponse = '$socketHeadHello$socketVersion.$_secret';
+        _log.info('Sending auth: "${authResponse.replaceRange(authResponse.length - 3, authResponse.length, '***')}" (${authResponse.length} chars)');
+        _client!.write(authResponse);
+        _client!.flush().then((_) => _log.fine('Auth response flushed'));
         status.value = SocketStatus.connected;
+        _log.info('Handshake complete - connected to $connectedAddress');
+        _onConnectionEstablished();
       } else {
-        debugPrint('Invalid server greeting: "$utfString"');
+        _log.severe('Invalid server greeting: "${utfString.substring(0, utfString.length.clamp(0, 100))}"');
         _closeConnection();
       }
     } else {
@@ -108,7 +141,7 @@ class SocketProvider {
         if (dataLength == 0) {
           final index = utfString.indexOf(':');
           if (index < 0) {
-            debugPrint('_onData: invalid message format (no colon separator)');
+            _log.warning('Invalid message format (no colon separator)');
             _closeConnection();
             return;
           }
@@ -125,8 +158,8 @@ class SocketProvider {
         } else {
           debugPrint('_onData will continue: $dataLength - ${dataToParse.length}');
         }
-      } catch (e) {
-        debugPrint('_onData parse error: $e');
+      } catch (e, stackTrace) {
+        _log.severe('Data parse error', e, stackTrace);
         dataLength = 0;
         dataToParse = '';
         _closeConnection();
@@ -139,8 +172,14 @@ class SocketProvider {
     debugPrint('parse!');
     final response = SocketResponse.fromJson(jsonDecode(utfString));
     if (response.running == true) {
+      if (status.value != SocketStatus.connectedRunning) {
+        _log.info('Server monitoring status: running');
+      }
       status.value = SocketStatus.connectedRunning;
     } else if (response.running == false) {
+      if (status.value != SocketStatus.connectedNotRunning) {
+        _log.info('Server monitoring status: not running');
+      }
       status.value = SocketStatus.connectedNotRunning;
     }
     _streamController.sink.add(response);
@@ -149,37 +188,38 @@ class SocketProvider {
   void clientSendData(Map<String, dynamic> json) {
     assert(_client != null, 'Trying to send when no connected clients');
     final strSend = jsonEncode(json);
-    debugPrint('_clientSendData: $strSend');
+    _log.fine('Sending command: ${json['command']}');
     _client?.write(strSend);
     _client?.flush();
   }
 
   void _closeConnection() {
-    waitAfterDisconnect = true;
+    _log.info('Connection closed, will retry');
     disconnect();
-    _autoConnect();
+    // After a disconnect from established connection, retry quickly first
+    _scheduleConnect(_currentRetryMs);
   }
 
   void _onDone() {
-    debugPrint('onDone');
+    _log.info('Server closed connection');
     _closeConnection();
   }
 
   void dispose() {
-    exit = true;
+    _log.info('Disposing');
+    _exit = true;
     _streamController.close();
     disconnect();
   }
 
   void disconnect() {
-    debugPrint('disconnect');
+    _log.info('Disconnecting from ${connectedAddress ?? "none"}');
     _timer?.cancel();
     _timer = null;
     _client?.close();
     _client?.destroy();
     _client = null;
     _serverVersion = '';
-    debugPrint('disconnected');
     status.value = SocketStatus.disconnected;
   }
 }

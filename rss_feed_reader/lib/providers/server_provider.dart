@@ -36,11 +36,12 @@ class SocketServerHandler {
   String clientVersion = '';
   final String _secret;
   int currentTweetIndex = 0;
-  bool authenticate = false;
+  String _handshakeBuffer = '';
   Socket? _clientSocket;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
   String get clientIP => _clientSocket?.remoteAddress.address ?? '?';
   SocketServerHandler(this.ref, {this.port = defaultPort, required String secret}) : _secret = secret {
+    _log.info('Init - port: $port, secret: "${secret.length > 3 ? '${secret.substring(0, secret.length - 3)}***' : '***'}" (${secret.length} chars)');
     _startListener();
   }
   Future<void> _startListener() async {
@@ -82,33 +83,22 @@ class SocketServerHandler {
   }
 
   void _newConnection(Socket socket) {
-    _log.fine('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - newConnection');
+    _log.fine('_newConnection(${socket.remoteAddress}:${socket.remotePort})');
     if (_clientSocket != null) {
-      _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Someone is already connected so ignoring');
-      _clientSendData({'code': codeAlreadyConnected, 'data': 'already connected'}, socket: socket);
+      _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - already connected, ignoring');
+      socket.destroy();
+      return;
+    }
+    // Check permanent block list (prefix-based, e.g. '45.', '89.')
+    final ipCheck = ref.read(providerIPChecks);
+    if (ipCheck != null && ipCheck.isBlocked(socket)) {
       socket.destroy();
       return;
     }
     _closeServerListener();
-    final ipCheck = ref.read(providerIPChecks);
-    if (ipCheck != null) {
-      final chk = ipCheck.checkConnectionBlocked(socket);
-      if (chk != null && chk.block) {
-        _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Blocked IP trying to connect. Check rss_ipconnections.json to unblock.');
-        socket.destroy();
-        _startListener();
-        return;
-      }
-      if (chk == null) {
-        ipCheck.addNewConnection(socket);
-      } else {
-        _log.info('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - known IP');
-      }
-    } else {
-      _log.info('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - IP checks not configured, accepting');
-    }
     _clientSocket = socket;
     _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
+    _log.info('Client socket listener registered for ${socket.remoteAddress}:${socket.remotePort}');
     _clientSocket?.write('$socketHeadHello$socketVersion');
     _log.fine('SENT: $socketHeadHello$socketVersion');
     isConnected.value = _clientSocket != null;
@@ -116,22 +106,30 @@ class SocketServerHandler {
   }
 
   void _clientDisconnected() {
-    _log.info('_clientDisconnected(${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort})');
+    _log.info('_clientDisconnected called (clientSocket=${_clientSocket != null ? '${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort}' : 'null'})');
+    if (_clientSocket == null) return; // already cleaned up
     _closeClient();
     _startListener();
   }
 
   void _closeClient() {
-    _log.info('_closeClient($_clientSocket)');
-    _clientSocket?.close();
-    _clientSocket?.destroy();
+    if (_clientSocket == null) {
+      return;
+    }
+    _log.info('_closeClient(${_clientSocket?.remoteAddress})');
+    final socket = _clientSocket;
     _clientSocket = null;
     clientVersion = '';
+    _handshakeBuffer = '';
     isConnected.value = false;
+    socket?.close();
+    socket?.destroy();
   }
 
   void _clientError(Object err) {
-    _log.warning('_clientError($err)');
+    _log.warning('_clientError($err)', err);
+    _closeClient();
+    _startListener();
   }
 
   void _clientSendData(Map<String, dynamic> json, {Socket? socket}) {
@@ -198,29 +196,33 @@ class SocketServerHandler {
 
   void _clientDataReceived(Uint8List data) {
     final utfString = utf8.decode(data);
-    _log.info('_clientDataReceived($utfString)');
-    if (isConnected.value == false || clientVersion.isEmpty) {
-      final ipCheck = ref.read(providerIPChecks);
-      final found = _clientSocket != null ? ipCheck?.checkConnectionBlocked(_clientSocket!) : null;
-      if (found != null) {
-        if (utfString.startsWith(socketHeadHello) && utfString.endsWith('.$_secret')) {
-          ipCheck!.ipConnectedOK(found);
-          clientVersion = utfString.split('$socketHeadHello:').last.split('.').first;
-          isConnected.value = _clientSocket != null;
-          _log.info('Connected: $clientVersion, ${isConnected.value}');
-          _selectAndSendFeed();
-        } else {
-          if (_clientSocket != null) ipCheck?.blockIP(found);
-          _log.warning('Invalid client request: "$utfString" != "$socketHeadHello"');
-          _log.warning('_clientDataReceived, newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid header. Stopping server - $utfString');
-          _closeClient();
-          isConnected.value = null;
-          Future.delayed(const Duration(minutes: 30), _startListener);
-        }
-      } else {
-        _log.severe('_clientDataReceived, _newConnection(${_clientSocket!.remoteAddress}:${_clientSocket!.remotePort}) - Invalid block provider');
+    _log.info('_clientDataReceived(${data.length} bytes) from ${_clientSocket?.remoteAddress}');
+    if (clientVersion.isEmpty) {
+      // Awaiting handshake response — buffer data (may arrive in multiple TCP packets)
+      _handshakeBuffer += utfString;
+      _log.fine('Handshake buffer: "${_handshakeBuffer.length > 100 ? '${_handshakeBuffer.substring(0, 100)}...' : _handshakeBuffer}"');
+      _log.fine('startsWith=$socketHeadHello: ${_handshakeBuffer.startsWith(socketHeadHello)}, endsWith=._secret: ${_handshakeBuffer.endsWith('.$_secret')}');
+      if (_handshakeBuffer.startsWith(socketHeadHello) && _handshakeBuffer.endsWith('.$_secret')) {
+        clientVersion = _handshakeBuffer.split(socketHeadHello).last.split('.').first;
+        _handshakeBuffer = '';
+        isConnected.value = _clientSocket != null;
+        _log.info('Authenticated - clientVersion: $clientVersion, from: ${_clientSocket?.remoteAddress}');
+        _selectAndSendFeed();
+      } else if (!socketHeadHello.startsWith(_handshakeBuffer) && !_handshakeBuffer.startsWith(socketHeadHello)) {
+        // Clearly not a valid handshake (e.g. HTTP request) — silently close
+        final preview = _handshakeBuffer.length > 80 ? '${_handshakeBuffer.substring(0, 80)}...' : _handshakeBuffer;
+        _log.warning('Invalid handshake from ${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort} - "$preview"');
+        _handshakeBuffer = '';
         _closeClient();
-        isConnected.value = null;
+        _startListener();
+      } else if (_handshakeBuffer.length > 500) {
+        // Too much data without valid handshake — silently close
+        _log.warning('Handshake too long from ${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort} (${_handshakeBuffer.length} bytes)');
+        _handshakeBuffer = '';
+        _closeClient();
+        _startListener();
+      } else {
+        _log.fine('Handshake incomplete, waiting for more data (${_handshakeBuffer.length} bytes so far)');
       }
     } else {
       debugPrint('decode');

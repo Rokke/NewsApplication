@@ -1,19 +1,34 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:news_client_application/home.dart';
 import 'package:news_client_application/providers/config_provider.dart';
+import 'package:news_client_application/providers/log_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final log = Logger('main');
+
+  final logService = LogService();
+  await logService.initialize();
+  log.info('App starting');
+
   final appConfig = ApplicationConfiguration();
   await appConfig.initialize();
-  runApp(ProviderScope(overrides: [providerConfig.overrideWith((ref) => appConfig)], child: const MyApp()));
+  log.info('Config loaded - serverInternal: ${appConfig.socketServerInternal}, serverExternal: ${appConfig.socketServerExternal}');
+
+  runApp(ProviderScope(
+    overrides: [
+      providerConfig.overrideWith((ref) => appConfig),
+      logServiceProvider.overrideWithValue(logService),
+    ],
+    child: const MyApp(),
+  ));
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(

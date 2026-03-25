@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/socket_provider.dart';
 import 'package:news_client_application/settings_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+final _log = Logger('HomePage');
 final appVersionProvider = FutureProvider<PackageInfo>((ref) => PackageInfo.fromPlatform());
 
 class HomePage extends ConsumerStatefulWidget {
@@ -22,6 +24,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   bool showFeeds = true;
   void launchURL(String url) async {
     final completeUrl = url.startsWith('http') ? url : 'http://$url';
+    _log.info('Opening URL: $completeUrl');
     await launchUrl(Uri.parse(completeUrl));
   }
 
@@ -46,8 +49,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                     },
                     icon: const Icon(Icons.refresh),
                   ),
-                  Text(showFeeds ? 'RSS news' : 'Tweet news'),
-                  ref.watch(appVersionProvider).whenOrNull(data: (info) => Text(' - ${info.version}', style: Theme.of(context).textTheme.bodySmall)) ?? const SizedBox.shrink(),
+                  Flexible(
+                    child: Column(
+                      children: [
+                        Text(showFeeds ? 'RSS news' : 'Tweet news'),
+                        ref.watch(appVersionProvider).whenOrNull(data: (info) => Text(info.version, style: Theme.of(context).textTheme.bodySmall)) ?? const SizedBox.shrink(),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               actions: [
