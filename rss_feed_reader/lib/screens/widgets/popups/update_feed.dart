@@ -51,7 +51,7 @@ class UpdateFeedPopup extends ConsumerWidget {
                             // print('refesh: $valUrl');
                             return ElevatedButton.icon(
                               label: Container(height: 40),
-                              style: ButtonStyle(backgroundColor: MaterialStateColor.resolveWith((states) => Colors.purple.shade700)),
+                              style: ButtonStyle(backgroundColor: WidgetStateColor.resolveWith((states) => Colors.purple.shade700)),
                               // color: Colors.blue,
                               icon: changedUrlValue == null && feed.feedFav == null
                                   ? const Icon(Icons.rss_feed, color: Colors.red)

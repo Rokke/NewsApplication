@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /d/Data/Flutter/NewsApplication/*.md /d/Data/Flutter/NewsApplication/.cursor* /d/Data/Flutter/NewsApplication/.github)",
+      "Bash(flutter create:*)",
+      "Bash(flutter analyze:*)"
+    ]
+  }
+}

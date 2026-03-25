@@ -56,7 +56,7 @@ class AddFeedPopup extends ConsumerWidget {
                                           id: txtTwitterUserId.text.isNotEmpty ? int.tryParse(txtTwitterUserId.text) : null,
                                           username: txtTwitterUsername.text.length > 3 ? txtTwitterUsername.text : null)
                                       .then((foundUser) {
-                                    if (foundUser != null) {
+                                    if (foundUser != null && context.mounted) {
                                       tweetHead.addNewUser(foundUser);
                                       Navigator.pop(
                                         context,

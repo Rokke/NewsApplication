@@ -6,15 +6,29 @@ import 'package:rss_feed_reader/providers/tweet_list.dart';
 import 'package:rss_feed_reader/screens/widgets/lists/feed_list_item.dart';
 import 'package:rss_feed_reader/screens/widgets/twitter_user_widget.dart';
 
-class DrawerListItems extends ConsumerWidget {
+class DrawerListItems extends ConsumerStatefulWidget {
   final List<FeedEncode> feeds;
+  const DrawerListItems(this.feeds, {super.key});
+
+  @override
+  ConsumerState<DrawerListItems> createState() => _DrawerListItemsState();
+}
+
+class _DrawerListItemsState extends ConsumerState<DrawerListItems> {
   final _scrollController = ScrollController();
-  DrawerListItems(this.feeds, {super.key});
   final ValueNotifier<bool> feedSelected = ValueNotifier(true);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    _scrollController.dispose();
+    feedSelected.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final twitterRef = ref.watch(providerTweetHeader);
+    final feeds = widget.feeds;
     return ValueListenableBuilder(
       valueListenable: feedSelected,
       builder: (context, bool isFeed, child) => Column(

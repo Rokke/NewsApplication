@@ -71,7 +71,7 @@ class SocketServerHandler {
     _log.info('_serverDone');
   }
 
-  void _serverError(err) {
+  void _serverError(Object err) {
     _log.warning('_serverError($err)', err);
   }
 
@@ -83,31 +83,36 @@ class SocketServerHandler {
 
   void _newConnection(Socket socket) {
     _log.fine('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - newConnection');
-    final ipCheck = ref.read(providerIPChecks);
-    if (_clientSocket == null && ipCheck != null) {
-      _closeServerListener();
-      final chk = ipCheck.checkConnectionBlocked(socket);
-      if (chk != null && chk.block) {
-        _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Blocked IP trying to connect');
-        socket.destroy();
-      } else {
-        if (chk == null) {
-          ipCheck.addNewConnection(socket);
-        } else {
-          _log.info('_newConnection(${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort})');
-        }
-        _clientSocket = socket;
-        _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
-        _clientSocket?.write('$socketHeadHello$socketVersion');
-        _log.fine('SENT: $socketHeadHello$socketVersion');
-        isConnected.value = _clientSocket != null;
-        _clientSocket?.flush();
-      }
-    } else {
+    if (_clientSocket != null) {
       _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Someone is already connected so ignoring');
       _clientSendData({'code': codeAlreadyConnected, 'data': 'already connected'}, socket: socket);
       socket.destroy();
+      return;
     }
+    _closeServerListener();
+    final ipCheck = ref.read(providerIPChecks);
+    if (ipCheck != null) {
+      final chk = ipCheck.checkConnectionBlocked(socket);
+      if (chk != null && chk.block) {
+        _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - Blocked IP trying to connect. Check rss_ipconnections.json to unblock.');
+        socket.destroy();
+        _startListener();
+        return;
+      }
+      if (chk == null) {
+        ipCheck.addNewConnection(socket);
+      } else {
+        _log.info('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - known IP');
+      }
+    } else {
+      _log.info('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - IP checks not configured, accepting');
+    }
+    _clientSocket = socket;
+    _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
+    _clientSocket?.write('$socketHeadHello$socketVersion');
+    _log.fine('SENT: $socketHeadHello$socketVersion');
+    isConnected.value = _clientSocket != null;
+    _clientSocket?.flush();
   }
 
   void _clientDisconnected() {
@@ -125,7 +130,7 @@ class SocketServerHandler {
     isConnected.value = false;
   }
 
-  void _clientError(err) {
+  void _clientError(Object err) {
     _log.warning('_clientError($err)');
   }
 

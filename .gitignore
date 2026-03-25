@@ -12,3 +12,4 @@ rss_feed_reader/windows/runner/runner.exe.manifest
 rss_feed_reader/windows/runner/utils.cpp
 rss_feed_reader/windows/runner/win32_window.cpp
 rss_feed_reader/windows/runner/win32_window.h
+news_client_application/.metadata

@@ -6,7 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/socket_provider.dart';
 import 'package:news_client_application/settings_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+final appVersionProvider = FutureProvider<PackageInfo>((ref) => PackageInfo.fromPlatform());
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -29,165 +32,155 @@ class _HomePageState extends ConsumerState<HomePage> {
     final socketProvider = ref.read(providerSocket);
     return ValueListenableBuilder(
       valueListenable: socketProvider.status,
-      builder: (BuildContext context, SocketStatus status, Widget? child) => Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              IconButton(
-                  onPressed: () {
-                    setState(() {
-                      showFeeds = !showFeeds;
-                    });
-                    socketProvider.clientSendData({'command': showFeeds ? 'feed' : 'tweet'});
-                  },
-                  icon: const Icon(Icons.refresh)),
-              Text(showFeeds ? 'RSS news' : 'Tweet news'),
-            ],
-          ),
-          actions: [
-            if (socketProvider.isConnected)
-              IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: const Icon(Icons.skip_previous)),
-            if (socketProvider.isConnected) IconButton(onPressed: () => url.isNotEmpty ? launchURL(url) : null, icon: const Icon(Icons.open_in_browser)),
-            if (socketProvider.isConnected)
-              IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: const Icon(Icons.skip_next))
-            else if (status == SocketStatus.waiting)
-              const CircularProgressIndicator()
-            else
-              const Icon(Icons.no_cell, color: Colors.red),
-            if (status == SocketStatus.connectedNotRunning)
-              IconButton(onPressed: () => socketProvider.clientSendData({'command': 'start_monitor'}), icon: const Icon(Icons.play_arrow_sharp, color: Colors.red))
-            else if (status == SocketStatus.connectedRunning)
-              const Icon(Icons.check, color: Colors.green),
-            IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen())), icon: const Icon(Icons.settings)),
-          ],
-        ),
-        body: socketProvider.isValid
-            ? StreamBuilder<SocketResponse>(
-                stream: socketProvider.stream,
-                initialData: null,
-                builder: (BuildContext context, AsyncSnapshot<SocketResponse> snapshot) {
-                  if (snapshot.hasData) {
-                    if (snapshot.data != null) {
-                      if (snapshot.data!.code >= 1 && snapshot.data!.newsItem != null) {
-                        final item = snapshot.data!.newsItem!;
-                        url = item.url;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              color: Theme.of(context).primaryColor,
-                              child: Center(
-                                child: Text(
-                                  item.title,
-                                  style: Theme.of(context).primaryTextTheme.bodyLarge,
-                                ),
-                              ),
-                            ),
-                            if (item.text.isNotEmpty)
-                              Expanded(
-                                  child: showFeeds
-                                      ? Html(
-                                          data: item.text,
-                                          shrinkWrap: true,
-                                        )
-                                      : Linkify(
-                                          text: item.text,
-                                          onOpen: (link) => launchURL(link.text),
-                                          style: Theme.of(context).textTheme.titleLarge,
-                                        ))
-                            else
-                              const Expanded(child: Center(child: Text('No description'))),
-                            Container(
-                              color: Theme.of(context).bottomAppBarTheme.color,
-                              child: Row(children: [
-                                Container(
-                                    width: width,
-                                    alignment: Alignment.centerLeft,
-                                    child: item.imageUrl != null
-                                        ? CachedNetworkImage(
-                                            imageUrl: item.imageUrl!,
-                                            fit: BoxFit.scaleDown,
-                                            alignment: Alignment.center,
-                                            height: 40,
-                                            errorWidget: (_, __, ___) => Container(),
-                                          )
-                                        : Container()),
-                                SizedBox(
-                                  width: width,
-                                  child: Center(
-                                    child: ElevatedButton(
-                                      style: ButtonStyle(elevation: WidgetStateProperty.resolveWith((states) => 0), shadowColor: WidgetStateProperty.all<Color>(Colors.red)),
-                                      onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'article_read' : 'tweet_read', 'id': item.id}),
-                                      child: Container(
-                                        width: 100,
-                                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
-                                        child: const Icon(
-                                          Icons.delete,
-                                          color: Colors.white,
-                                          size: 30,
+      builder:
+          (BuildContext context, SocketStatus status, Widget? child) => Scaffold(
+            appBar: AppBar(
+              title: Row(
+                children: [
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        showFeeds = !showFeeds;
+                      });
+                      socketProvider.clientSendData({'command': showFeeds ? 'feed' : 'tweet'});
+                    },
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  Text(showFeeds ? 'RSS news' : 'Tweet news'),
+                  ref.watch(appVersionProvider).whenOrNull(data: (info) => Text(' - ${info.version}', style: Theme.of(context).textTheme.bodySmall)) ?? const SizedBox.shrink(),
+                ],
+              ),
+              actions: [
+                if (socketProvider.isConnected)
+                  IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'previous_feed' : 'previous_tweet'}), icon: const Icon(Icons.skip_previous)),
+                if (socketProvider.isConnected) IconButton(onPressed: () => url.isNotEmpty ? launchURL(url) : null, icon: const Icon(Icons.open_in_browser)),
+                if (socketProvider.isConnected)
+                  IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: const Icon(Icons.skip_next))
+                else if (status == SocketStatus.waiting)
+                  const CircularProgressIndicator()
+                else
+                  const Icon(Icons.no_cell, color: Colors.red),
+                if (status == SocketStatus.connectedNotRunning)
+                  IconButton(onPressed: () => socketProvider.clientSendData({'command': 'start_monitor'}), icon: const Icon(Icons.play_arrow_sharp, color: Colors.red))
+                else if (status == SocketStatus.connectedRunning)
+                  const Icon(Icons.check, color: Colors.green),
+                IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const SettingsScreen())), icon: const Icon(Icons.settings)),
+              ],
+            ),
+            body:
+                socketProvider.isValid
+                    ? StreamBuilder<SocketResponse>(
+                      stream: socketProvider.stream,
+                      initialData: null,
+                      builder: (BuildContext context, AsyncSnapshot<SocketResponse> snapshot) {
+                        if (snapshot.hasData) {
+                          if (snapshot.data != null) {
+                            if (snapshot.data!.code >= 1 && snapshot.data!.newsItem != null) {
+                              final item = snapshot.data!.newsItem!;
+                              url = item.url;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(4),
+                                    color: Theme.of(context).primaryColor,
+                                    child: Center(child: Text(item.title, style: Theme.of(context).primaryTextTheme.bodyLarge)),
+                                  ),
+                                  if (item.text.isNotEmpty)
+                                    Expanded(
+                                      child:
+                                          showFeeds
+                                              ? Html(data: item.text, shrinkWrap: true)
+                                              : Linkify(text: item.text, onOpen: (link) => launchURL(link.text), style: Theme.of(context).textTheme.titleLarge),
+                                    )
+                                  else
+                                    const Expanded(child: Center(child: Text('No description'))),
+                                  Container(
+                                    color: Theme.of(context).bottomAppBarTheme.color,
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: width,
+                                          alignment: Alignment.centerLeft,
+                                          child:
+                                              item.imageUrl != null
+                                                  ? CachedNetworkImage(imageUrl: item.imageUrl!, fit: BoxFit.scaleDown, alignment: Alignment.center, height: 40, errorWidget: (_, _, _) => Container())
+                                                  : Container(),
                                         ),
-                                      ),
+                                        SizedBox(
+                                          width: width,
+                                          child: Center(
+                                            child: ElevatedButton(
+                                              style: ButtonStyle(elevation: WidgetStateProperty.resolveWith((states) => 0), shadowColor: WidgetStateProperty.all<Color>(Colors.red)),
+                                              onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'article_read' : 'tweet_read', 'id': item.id}),
+                                              child: Container(
+                                                width: 100,
+                                                decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
+                                                child: const Icon(Icons.delete, color: Colors.white, size: 30),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          constraints: BoxConstraints.tightFor(height: 40, width: width),
+                                          alignment: Alignment.centerRight,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                                            alignment: Alignment.center,
+                                            color: Theme.of(context).disabledColor,
+                                            height: 40,
+                                            width: 100,
+                                            child: Stack(
+                                              children: [
+                                                Align(
+                                                  alignment: Alignment.topLeft,
+                                                  child: Text(
+                                                    showFeeds
+                                                        ? '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}'
+                                                        : '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}',
+                                                    style: Theme.of(context).primaryTextTheme.titleLarge,
+                                                  ),
+                                                ),
+                                                Align(
+                                                  alignment: Alignment.bottomRight,
+                                                  child: Text(
+                                                    showFeeds
+                                                        ? '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}'
+                                                        : '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}',
+                                                    style: Theme.of(context).primaryTextTheme.bodyLarge,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ),
-                                Container(
-                                    constraints: BoxConstraints.tightFor(height: 40, width: width),
-                                    alignment: Alignment.centerRight,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                                      alignment: Alignment.center,
-                                      color: Theme.of(context).disabledColor,
-                                      height: 40,
-                                      width: 100,
-                                      child: Stack(
-                                        children: [
-                                          Align(
-                                            alignment: Alignment.topLeft,
-                                            child: Text(
-                                              showFeeds
-                                                  ? '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}'
-                                                  : '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}',
-                                              style: Theme.of(context).primaryTextTheme.titleLarge,
-                                            ),
-                                          ),
-                                          Align(
-                                            alignment: Alignment.bottomRight,
-                                            child: Text(
-                                              showFeeds
-                                                  ? '${snapshot.data!.currentTweet + 1}/${snapshot.data!.numberOfTweets}'
-                                                  : '${snapshot.data!.currentArticle + 1}/${snapshot.data!.numberOfArticles}',
-                                              style: Theme.of(context).primaryTextTheme.bodyLarge,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )),
-                              ]),
-                            )
-                          ],
-                        );
-                      }
-                      return Center(
-                          child: Text(
-                        snapshot.data!.code == -1
-                            ? 'Ingen artikler'
-                            : snapshot.data!.code == -2
-                                ? 'Ingen tweets'
-                                : 'Unknown type',
-                        style: Theme.of(context).textTheme.displaySmall,
-                      ));
-                    } else {
-                      return const Text('No data');
-                    }
-                  } else {
-                    return const Text('No snapshot');
-                  }
-                },
-              )
-            : const Center(child: Text('Konfigurer leser')),
-      ),
+                                ],
+                              );
+                            }
+                            return Center(
+                              child: Text(
+                                snapshot.data!.code == -1
+                                    ? 'Ingen artikler'
+                                    : snapshot.data!.code == -2
+                                    ? 'Ingen tweets'
+                                    : 'Unknown type',
+                                style: Theme.of(context).textTheme.displaySmall,
+                              ),
+                            );
+                          } else {
+                            return const Text('No data');
+                          }
+                        } else {
+                          return const Text('No snapshot');
+                        }
+                      },
+                    )
+                    : const Center(child: Text('Konfigurer leser')),
+          ),
     );
   }
 }

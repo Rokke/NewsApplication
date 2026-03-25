@@ -15,7 +15,7 @@ Future<bool?> confirmChoice(BuildContext context, String title, String body) asy
           children: [
             Container(
               padding: const EdgeInsets.all(8).copyWith(bottom: 20),
-              color: (HSLColor.fromColor(Theme.of(context).colorScheme.background).withLightness(0.3)).toColor(),
+              color: (HSLColor.fromColor(Theme.of(context).colorScheme.surface).withLightness(0.3)).toColor(),
               child: Column(
                 children: [
                   Center(child: Text(body)),

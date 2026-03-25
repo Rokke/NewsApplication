@@ -109,7 +109,7 @@ class FeedView extends ConsumerWidget {
                                 },
                               ),
                             ).then((ret) {
-                              if (ret is String && ret.length > 1) {
+                              if (context.mounted && ret is String && ret.length > 1) {
                                 Navigator.of(context).pop();
                               } else {
                                 debugPrint('Ugyldig valg');
@@ -142,10 +142,12 @@ class FeedView extends ConsumerWidget {
                           confirmChoice(context, 'Sletting', 'Er du sikker på at du ønsker å slette alle leste artikler og tweets?').then((value) {
                             if (value == true) {
                               ref.read(rssDatabase).cleanOldData().then(
-                                    (amount) => showSnackbar(context, 'Slettet $amount rader'),
-                                  );
+                                (amount) {
+                                  if (context.mounted) showSnackbar(context, 'Slettet $amount rader');
+                                },
+                              );
                             }
-                            Navigator.pop(context);
+                            if (context.mounted) Navigator.pop(context);
                           });
                         },
                         icon: const Icon(Icons.add_circle),

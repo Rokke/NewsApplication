@@ -119,7 +119,7 @@ extension SoundPath on SoundFile {
 int playSoundIsolate(String soundFilename) {
   debugPrint('sound: soundFile: $soundFilename');
   final sound = TEXT(soundFilename);
-  PlaySound(sound, NULL, SND_FLAGS.SND_ALIAS);
+  PlaySound(sound, NULL, SND_ALIAS);
   free(sound);
   debugPrint('played sound');
   return 0;

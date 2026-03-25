@@ -29,7 +29,7 @@ class CategoryPopup extends StatelessWidget {
                     Text('Velg farge for ${category.name}'),
                     LayoutBuilder(
                         builder: (context, constraints) => constraints.maxWidth >= 500
-                            ? ColorPicker(pickerColor: category.color != null ? Color(category.color!) : Colors.black, onColorChanged: (c) => color = c.value)
+                            ? ColorPicker(pickerColor: category.color != null ? Color(category.color!) : Colors.black, onColorChanged: (c) => color = c.toARGB32())
                             : Container()),
                     ElevatedButton(onPressed: () => Navigator.pop(context, color), child: const Text('Endre farge')),
                   ],

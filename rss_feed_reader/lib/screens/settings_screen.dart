@@ -2,20 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
 
-class SettingsScreen extends ConsumerWidget {
-  SettingsScreen({super.key});
+class SettingsScreen extends ConsumerStatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final txtSecret = TextEditingController();
   final txtLogpath = TextEditingController();
-  void _save(BuildContext context, ApplicationConfiguration config, String secret, String logpath) {
-    config.updateSettings(socketSecret: secret, logFilepath: logpath);
+
+  @override
+  void initState() {
+    super.initState();
+    final config = ref.read(providerConfig);
+    txtSecret.text = config.socketSecret;
+    txtLogpath.text = config.logFilepath;
+  }
+
+  @override
+  void dispose() {
+    txtSecret.dispose();
+    txtLogpath.dispose();
+    super.dispose();
+  }
+
+  void _save(ApplicationConfiguration config) {
+    config.updateSettings(socketSecret: txtSecret.text, logFilepath: txtLogpath.text);
     Navigator.of(context).pop();
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.read(providerConfig.notifier);
-    txtSecret.text = config.socketSecret;
-    txtLogpath.text = config.logFilepath;
+  Widget build(BuildContext context) {
+    final config = ref.read(providerConfig);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: Padding(
@@ -26,7 +46,7 @@ class SettingsScreen extends ConsumerWidget {
             const SizedBox(height: 20),
             TextField(controller: txtLogpath, decoration: const InputDecoration(labelText: 'Logpath')),
             const Expanded(child: SizedBox()),
-            ElevatedButton(onPressed: () => _save(context, config, txtSecret.text, txtLogpath.text), child: const Text('Save')),
+            ElevatedButton(onPressed: () => _save(config), child: const Text('Save')),
           ],
         ),
       ),

@@ -6,14 +6,6 @@ import 'package:logging/logging.dart';
 import 'package:rss_feed_reader/models/xml_mapper/channel_mapper.dart';
 import 'package:xml/xml.dart';
 
-// final networkProvider = Provider<RSSNetwork>((ref) {
-//   return RSSNetwork(ref.watch(rssDatabase));
-// });
-
-// static final _log = Logger('RSSNetwork');
-// final AppDb db;
-
-// RSSNetwork(this.db);
 Future<ChannelMapper?> readChannel(String url, {Logger? log}) async {
   try {
     log?.finest('readChannel($url)');
@@ -23,29 +15,6 @@ Future<ChannelMapper?> readChannel(String url, {Logger? log}) async {
     log?.warning('readChannel($url)', err);
   }
   return null;
-  //   int newId;
-  //   if (feed.id == null && channel.title != null) {
-  //     newId = await feedListHeader.insertFeed(FeedEncode.fromChannel(channel)(data) feed.url, channel, currentEpochMs, imgUrl ?? channel.image ?? (fetchHostUrl(channel.link ?? channel.atomlink ?? feed.url) + '/favicon.ico'));
-  //   } else {
-  //     newId = feed.id!;
-  //     _log.info('update lastCheck on feed($newId): ${await db.updateFeed(newId, FeedCompanion(lastCheck: moor.Value(currentEpochMs)))}');
-  //   }
-  //   debugPrint('update/add-Feed: $newId');
-  //   List<int> stillActiveArticles = [];
-  //   for (ItemMapper item in channel.items) {
-  //     if (item.link != null && item.link!.isNotEmpty) {
-  //       final foundArticle = await (db.select(db.article)..where((tbl) => tbl.url.equals(item.link ?? item.guid))).getSingleOrNull();
-  //       if (foundArticle == null) {
-  //         _log.fine('Adding new item: ${item.title}');
-  //         if (await db.insertArticle(item.toArticleCompanion(newId)) > 0) numberOfArticlesAdded++; //.addArticle(newId, item.title!, item.link, item.guid ?? item.link!, item.description, item.author, item.pubDate, item.category, item.encoded, null);
-  //       } else
-  //         stillActiveArticles.add(foundArticle.id!);
-  //     } else
-  //       _log.warning('Ignoring empty item: ${item.guid}');
-  //   }
-  //   if (feed.id != null) db.updateActiveStatus(feed.id!, stillActiveArticles);
-  // }
-  // return numberOfArticlesAdded;
 }
 
 class NewsAppNetworkException implements Exception {
@@ -109,21 +78,17 @@ Future<XmlElement?> readFeed(String url, {Logger? log}) async {
     final response = await http.Dio().get(url, options: opt);
     if (response.statusCode == 200) {
       final root = XmlDocument.parse(response.data as String);
-      // debugPrint('root: $root');
-      // debugPrint('find: ${root.findAllElements('feed')}');
-      if (root.findAllElements('channel').isEmpty) {
-        return root.findAllElements('feed').first;
-      } else {
-        return root.findAllElements('channel').first;
-      }
+      final channels = root.findAllElements('channel');
+      if (channels.isNotEmpty) return channels.first;
+      final feeds = root.findAllElements('feed');
+      if (feeds.isNotEmpty) return feeds.first;
+      log?.warning('readFeed($url) - no channel or feed element found');
+      return null;
     } else {
       log?.warning('Error downloading feed: ${response.statusCode}, $url');
     }
   } on http.DioException catch (serr, stack) {
-    debugPrint('socket error: $serr');
-    log?.warning('readFeed dio error ($url): ${serr.type}, ${serr.message}, ${serr.runtimeType}', serr, stack);
-    // if (serr.type == http.DioErrorType.response) throw SocketException('DIO error: $serr');
-    log?.warning('readFeed error ${serr.error}');
+    log?.warning('readFeed dio error ($url): ${serr.type}, ${serr.message}', serr, stack);
     rethrow;
   } catch (err) {
     debugPrint('error: $err');

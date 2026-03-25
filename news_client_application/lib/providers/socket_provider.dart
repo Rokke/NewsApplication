@@ -11,17 +11,10 @@ const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
 
 final providerSocket = Provider((ref) {
-  NetworkInterface.list().then((value) {
-    for (var interface in value) {
-      debugPrint('== Interface: ${interface.name} ==');
-      for (var addr in interface.addresses) {
-        debugPrint('${addr.address} ${addr.host} ${addr.isLoopback} ${addr.rawAddress} ${addr.type.name}');
-      }
-    }
-  });
   final config = ref.watch(providerConfig);
   debugPrint('changed config: ${config.socketServerInternal}');
-  final socket = SocketProvider(serverAddresses: [config.socketServerInternal, config.socketServerExternal], secret: config.socketSecret, autoConnectTimer: 60000);
+  final addresses = [config.socketServerInternal, config.socketServerExternal].where((a) => a.isNotEmpty).toList();
+  final socket = SocketProvider(serverAddresses: addresses, secret: config.socketSecret, autoConnectTimer: 60000);
   ref.onDispose(() {
     if (!socket.isDisconnected) socket.dispose();
   });
@@ -53,7 +46,7 @@ class SocketProvider {
   Stream<SocketResponse> get stream => _streamController.stream;
   Socket? _client;
   String get serverVersion => _serverVersion;
-  _autoConnect() async {
+  Future<void> _autoConnect() async {
     if (!exit && _autoConnectTimer > 0) {
       if (waitAfterDisconnect || !await connect()) {
         waitAfterDisconnect = false;
@@ -91,63 +84,59 @@ class SocketProvider {
     return false;
   }
 
-  _onError(error) {
+  void _onError(Object error) {
     debugPrint('onError: $error');
     disconnect();
     _autoConnect();
   }
 
-  _onData(List<int> data) {
-    // Completer<String>().complete(utfString);
+  void _onData(List<int> data) {
     debugPrint('onData init: ${data.length} bytes-${status.value}');
     final utfString = utf8.decode(data);
-    // debugPrint('onData init: $utfString');
     if (status.value == SocketStatus.waiting) {
-      // final utfString = utf8.decode(data);
       if (utfString.startsWith(socketHeadHello)) {
         _serverVersion = utfString.split(socketHeadHello).last;
-        _client!.write('$socketHeadHello:$socketVersion.$_secret');
+        _client!.write('$socketHeadHello$socketVersion.$_secret');
         _client!.flush();
         status.value = SocketStatus.connected;
       } else {
-        debugPrint('Invalid client request: "$utfString" != "$socketHeadHello"');
+        debugPrint('Invalid server greeting: "$utfString"');
         _closeConnection();
       }
     } else {
-      if (dataLength == 0) {
-        final index = utfString.indexOf(':');
-        dataLength = int.parse(utfString.substring(0, index));
-        debugPrint('_onData new: $dataLength bytes');
-        dataToParse = utfString.substring(index + 1);
-      } else {
-        debugPrint('_onData continue');
-        dataToParse += utf8.decode(data);
-      }
-      if (dataToParse.length == dataLength) {
+      try {
+        if (dataLength == 0) {
+          final index = utfString.indexOf(':');
+          if (index < 0) {
+            debugPrint('_onData: invalid message format (no colon separator)');
+            _closeConnection();
+            return;
+          }
+          dataLength = int.parse(utfString.substring(0, index));
+          debugPrint('_onData new: $dataLength bytes');
+          dataToParse = utfString.substring(index + 1);
+        } else {
+          debugPrint('_onData continue');
+          dataToParse += utf8.decode(data);
+        }
+        if (dataToParse.length == dataLength) {
+          dataLength = 0;
+          _parseData();
+        } else {
+          debugPrint('_onData will continue: $dataLength - ${dataToParse.length}');
+        }
+      } catch (e) {
+        debugPrint('_onData parse error: $e');
         dataLength = 0;
-        _parseData();
-      } else {
-        debugPrint('_onData will continue: $dataLength - ${dataToParse.length}');
+        dataToParse = '';
+        _closeConnection();
       }
     }
   }
 
-  _parseData() {
+  void _parseData() {
     final utfString = dataToParse;
-    // debugPrint('_parseData($utfString), $status');
-    // if (status.value == SocketStatus.WAITING) {
-    //   if (utfString.startsWith('$_SOCKET_HEADHELLO')) {
-    //     _serverVersion = utfString.split('$_SOCKET_HEADHELLO').last;
-    //     _client!.write('$_SOCKET_HEADHELLO:$_SOCKET_VERSION.SOMESUpERSECRET KEY');
-    //     _client!.flush();
-    //     status.value = SocketStatus.CONNECTED;
-    //   } else {
-    //     debugPrint('Invalid client request: "$utfString" != "$_SOCKET_HEADHELLO"');
-    //     _closeConnection();
-    //   }
-    // } else {
     debugPrint('parse!');
-    // debugPrint('OBJ: ${jsonDecode(utfString)}');
     final response = SocketResponse.fromJson(jsonDecode(utfString));
     if (response.running == true) {
       status.value = SocketStatus.connectedRunning;
@@ -155,23 +144,23 @@ class SocketProvider {
       status.value = SocketStatus.connectedNotRunning;
     }
     _streamController.sink.add(response);
-    // }
   }
 
-  clientSendData(Map<String, dynamic> json) {
+  void clientSendData(Map<String, dynamic> json) {
     assert(_client != null, 'Trying to send when no connected clients');
     final strSend = jsonEncode(json);
     debugPrint('_clientSendData: $strSend');
     _client?.write(strSend);
+    _client?.flush();
   }
 
-  _closeConnection() {
+  void _closeConnection() {
     waitAfterDisconnect = true;
     disconnect();
     _autoConnect();
   }
 
-  _onDone() {
+  void _onDone() {
     debugPrint('onDone');
     _closeConnection();
   }
@@ -182,7 +171,7 @@ class SocketProvider {
     disconnect();
   }
 
-  disconnect() {
+  void disconnect() {
     debugPrint('disconnect');
     _timer?.cancel();
     _timer = null;

@@ -113,7 +113,7 @@ class CustomAppBarWidget extends ConsumerWidget {
                       },
               );
             }),
-        IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => SettingsScreen())), icon: const Icon(Icons.settings)),
+        IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const SettingsScreen())), icon: const Icon(Icons.settings)),
         IconButton(
             color: Colors.red,
             icon: const Icon(
