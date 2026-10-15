@@ -15,15 +15,24 @@ plugins {
 //   3. ~/Library/CloudStorage/OneDrive-Personal/Privat/key.properties   the same, on macOS
 // `OneDriveConsumer` is the *personal* OneDrive; `OneDrive` can be a work one.
 // A relative storeFile resolves against the folder of the key.properties that names it.
-// Nothing here throws at configuration time: without a keystore, debug builds, `flutter run` and
-// `flutter test` still work, and a release build is signed with the debug key (see buildTypes).
+// Nothing here throws at configuration time: without a keystore, or with a key.properties that
+// can't be read (a cloud-only OneDrive file while offline, a `\u` in a Windows path), debug builds,
+// `flutter run` and `flutter test` still work, and a release build is signed with the debug key,
+// with a warning (see the end of this file).
 val keystorePropertiesFile: File? = listOfNotNull(
     rootProject.file("key.properties"),
     System.getenv("OneDriveConsumer")?.let { File(it, "Privat/key.properties") },
     File(System.getProperty("user.home"), "Library/CloudStorage/OneDrive-Personal/Privat/key.properties"),
 ).firstOrNull { it.isFile }
-val keystoreProperties = Properties().apply {
-    keystorePropertiesFile?.let { f -> FileInputStream(f).use { load(it) } }
+val keystoreProperties = Properties()
+val keystoreReadError: Exception? = keystorePropertiesFile?.let { f ->
+    try {
+        FileInputStream(f).use { keystoreProperties.load(it) }
+        null
+    } catch (e: Exception) {
+        keystoreProperties.clear()
+        e
+    }
 }
 val releaseStoreFile: File? = keystoreProperties.getProperty("storeFile")
     ?.let { keystorePropertiesFile!!.absoluteFile.parentFile.resolve(it) }
@@ -94,4 +103,24 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Without a keystore, release falls back to the debug key (see buildTypes). Such an APK can't update
+// an installed release build or go to Play, so say so whenever a release build runs, and where we
+// looked. QUIET level, because `flutter build` runs Gradle with -q, which hides warn().
+if (releaseStoreFile == null) {
+    val reason = when {
+        keystorePropertiesFile == null ->
+            "no key.properties in android/, in Privat under %OneDriveConsumer% " +
+                "(OneDriveConsumer=${System.getenv("OneDriveConsumer")}) or in " +
+                "~/Library/CloudStorage/OneDrive-Personal/Privat"
+        keystoreReadError != null -> "$keystorePropertiesFile could not be read ($keystoreReadError)"
+        else -> "$keystorePropertiesFile names storeFile=" +
+            "${keystoreProperties.getProperty("storeFile")}, which is not on disk"
+    }
+    gradle.taskGraph.whenReady {
+        if (allTasks.any { it.project == project && it.name.startsWith("pre") && it.name.endsWith("ReleaseBuild") }) {
+            logger.quiet("WARNING: Release signing: $reason. This release build is signed with the debug key.")
+        }
+    }
 }
