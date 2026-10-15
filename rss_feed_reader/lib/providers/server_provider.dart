@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,6 +16,8 @@ const defaultPort = kDebugMode ? 3344 : 3344;
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
 const codeAlreadyConnected = -99;
+// Connections still waiting to authenticate; when another arrives the oldest is dropped, so a flood can't lock out the phone
+const _maxPending = 4;
 // const blockedIP = ['45.', '89'];
 
 final providerSocketServer = Provider<SocketServerHandler>((ref) {
@@ -28,27 +31,45 @@ final providerSocketServer = Provider<SocketServerHandler>((ref) {
   return ret;
 });
 
+/// One accepted socket, from accept until it is dropped.
+class _Connection {
+  _Connection(this.socket, this.address, this.port);
+  final Socket socket;
+  // Socket.remoteAddress/remotePort throw once the socket is closed (e.g. reset by the peer),
+  // so they are read once on accept and kept here for the UI and the log.
+  final String address;
+  final int port;
+  String handshakeBuffer = '';
+  Timer? authTimer;
+  String version = '';
+  bool dropped = false;
+  String get label => '$address:$port';
+}
+
 class SocketServerHandler {
   final _log = Logger('SocketServerHandler');
   final int port;
   final InternetAddress? _bindAddress; // null = all IPv4 interfaces
+  final Duration _authTimeout;
+  final bool _sendFeedOnAuth;
   final Ref ref;
   ServerSocket? _serverSocket;
-  String clientVersion = '';
   final String _secret;
   int currentTweetIndex = 0;
-  String _handshakeBuffer = '';
-  Socket? _clientSocket;
-  // Socket.remoteAddress/remotePort throw once the socket is closed (e.g. reset by the peer),
-  // so the client's address is read once on connect and kept here for the UI and the log.
-  String _clientAddress = '?';
-  int _clientPort = 0;
+  _Connection? _client; // the authenticated client, at most one
+  final _pending = <_Connection>{}; // not authenticated yet, oldest first
   bool _disposed = false;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
-  String get clientIP => _clientAddress;
-  SocketServerHandler(this.ref, {this.port = defaultPort, required String secret, InternetAddress? bindAddress})
+  String get clientIP => _client?.address ?? '?';
+  String get clientVersion => _client?.version ?? '';
+
+  /// [sendFeedOnAuth] is off in tests, which would otherwise open the real database.
+  SocketServerHandler(this.ref,
+      {this.port = defaultPort, required String secret, InternetAddress? bindAddress, Duration authTimeout = const Duration(seconds: 10), @visibleForTesting bool sendFeedOnAuth = true})
       : _secret = secret,
-        _bindAddress = bindAddress {
+        _bindAddress = bindAddress,
+        _authTimeout = authTimeout,
+        _sendFeedOnAuth = sendFeedOnAuth {
     _log.info('Init - port: $port, secret: "${secret.length > 3 ? '${secret.substring(0, secret.length - 3)}***' : '***'}" (${secret.length} chars)');
     _startListener();
   }
@@ -80,14 +101,24 @@ class SocketServerHandler {
   void dispose() {
     _disposed = true;
     _closeServerListener();
-    _closeClient();
+    for (final conn in [..._pending, if (_client != null) _client!]) {
+      _drop(conn, 'server disposed');
+    }
   }
 
   void _serverDone() {
-    _log.info('_serverDone');
+    if (_disposed) {
+      _log.info('_serverDone');
+      return;
+    }
+    // The listener stays open while clients connect and only dispose() closes it, so the OS ended it: listen again
+    _log.warning('_serverDone()-listener closed unexpectedly, restarting');
+    _serverSocket = null;
+    _startListener();
   }
 
   void _serverError(Object err) {
+    // The listener keeps running after an error; if it ends, _serverDone listens again
     _log.warning('_serverError($err)', err);
   }
 
@@ -109,67 +140,66 @@ class SocketServerHandler {
       return;
     }
     _log.fine('_newConnection($address:$remotePort)');
-    if (_clientSocket != null) {
-      _log.warning('_newConnection($address:$remotePort) - already connected, ignoring');
-      socket.destroy();
-      return;
-    }
-    // Check permanent block list (prefix-based, e.g. '45.', '89.')
+    // Check permanent block list (prefix-based, e.g. '45.', '89.'); isBlocked logs the reason
     final ipCheck = ref.read(providerIPChecks);
     if (ipCheck != null && ipCheck.isBlocked(address)) {
       socket.destroy();
       return;
     }
-    _closeServerListener();
-    _clientSocket = socket;
-    _clientAddress = address;
-    _clientPort = remotePort;
-    socket.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
-    // Write errors also arrive in _clientError; this only keeps them from surfacing again as unhandled errors
-    socket.done.then((_) {}, onError: (Object err) => _log.fine('Client socket done with error: $err'));
-    _log.info('Client socket listener registered for $address:$remotePort');
+    // The listener stays open: a connected client may be stale (e.g. a phone that dropped off Wi-Fi), and its replacement must get through
+    if (_pending.length >= _maxPending) _drop(_pending.first, 'too many pending connections', level: Level.WARNING);
+    final conn = _Connection(socket, address, remotePort);
+    _pending.add(conn);
+    conn.authTimer = Timer(_authTimeout, () => _drop(conn, 'no authentication within ${_authTimeout.inMilliseconds / 1000} s', level: Level.WARNING));
+    socket.listen((data) => _clientDataReceived(conn, data), onDone: () => _drop(conn, 'closed by peer'), onError: (Object err) => _drop(conn, 'socket error: $err', level: Level.WARNING));
+    // Write errors also arrive in onError above; this only keeps them from surfacing again as unhandled errors
+    socket.done.then((_) {}, onError: (Object err) => _log.fine('Client socket ${conn.label} done with error: $err'));
+    _log.info('Connection from ${conn.label} awaiting authentication (${_pending.length} pending)');
     // No flush(): while it is pending, add() and close() on the socket throw, and its failure would go unhandled
     socket.write('$socketHeadHello$socketVersion');
     _log.fine('SENT: $socketHeadHello$socketVersion');
-    isConnected.value = true;
   }
 
-  void _clientDisconnected() {
-    _log.info('_clientDisconnected called (clientSocket=${_clientSocket != null ? '$_clientAddress:$_clientPort' : 'null'})');
-    if (_clientSocket == null) return; // already cleaned up
-    _closeClient();
-    _startListener();
-  }
-
-  void _closeClient() {
-    if (_clientSocket == null) {
-      return;
+  /// Closes [conn] and logs why; safe to call again for a connection that is already gone.
+  void _drop(_Connection conn, String reason, {Level level = Level.INFO}) {
+    if (conn.dropped) return;
+    conn.dropped = true;
+    conn.authTimer?.cancel();
+    _pending.remove(conn);
+    _log.log(level, 'Dropped ${conn.label}: $reason');
+    if (identical(conn, _client)) {
+      _client = null;
+      isConnected.value = false;
     }
-    _log.info('_closeClient($_clientAddress)');
-    final socket = _clientSocket;
-    _clientSocket = null;
-    _clientAddress = '?';
-    _clientPort = 0;
-    clientVersion = '';
-    _handshakeBuffer = '';
-    isConnected.value = false;
-    socket?.destroy();
+    // Only destroy(): close() throws while a write is pending, which would abort the cleanup
+    conn.socket.destroy();
   }
 
-  void _clientError(Object err) {
-    _log.warning('_clientError($err)', err);
-    _closeClient();
-    _startListener();
+  void _authenticated(_Connection conn) {
+    conn.authTimer?.cancel();
+    _pending.remove(conn);
+    // The newest client wins: the current one is most likely the same phone, reconnecting after its connection went silent.
+    // Dropping it first also flips isConnected false -> true, so the app bar picks up the new address.
+    final previous = _client;
+    if (previous != null) _drop(previous, 'replaced by ${conn.label}');
+    _client = conn;
+    isConnected.value = true;
+    _log.info('Authenticated - clientVersion: ${conn.version}, from: ${conn.label}');
+    if (_sendFeedOnAuth) _selectAndSendFeed();
   }
 
   void _clientSendData(Map<String, dynamic> json, {Socket? socket}) {
-    socket ??= _clientSocket;
-    assert(socket != null, 'Trying to send when no connected clients');
+    socket ??= _client?.socket;
+    if (socket == null) {
+      // The client was dropped while the reply was being prepared (e.g. during a database read)
+      _log.info('_clientSendData - no connected client, not sent');
+      return;
+    }
     final strSend = jsonEncode(json);
     final lst = '${strSend.length}:$strSend';
     _log.fine('_clientSendData(${strSend.length})');
     debugPrint('lst: ${lst.length} bytes');
-    socket!.add(utf8.encode(lst));
+    socket.add(utf8.encode(lst));
     // socket!.write(lst);
     // socket.flush();
   }
@@ -224,36 +254,30 @@ class SocketServerHandler {
     };
   }
 
-  void _clientDataReceived(Uint8List data) {
+  void _clientDataReceived(_Connection conn, Uint8List data) {
+    if (conn.dropped) return;
     // allowMalformed: binary probes (e.g. TLS) must fail the handshake check below, not throw out of this callback
     final utfString = utf8.decode(data, allowMalformed: true);
-    _log.info('_clientDataReceived(${data.length} bytes) from $_clientAddress');
-    if (clientVersion.isEmpty) {
+    _log.info('_clientDataReceived(${data.length} bytes) from ${conn.label}');
+    if (!identical(conn, _client)) {
       // Awaiting handshake response — buffer data (may arrive in multiple TCP packets)
-      _handshakeBuffer += utfString;
-      _log.fine('Handshake buffer: "${_handshakeBuffer.length > 100 ? '${_handshakeBuffer.substring(0, 100)}...' : _handshakeBuffer}"');
-      _log.fine('startsWith=$socketHeadHello: ${_handshakeBuffer.startsWith(socketHeadHello)}, endsWith=._secret: ${_handshakeBuffer.endsWith('.$_secret')}');
-      if (_handshakeBuffer.startsWith(socketHeadHello) && _handshakeBuffer.endsWith('.$_secret')) {
-        clientVersion = _handshakeBuffer.split(socketHeadHello).last.split('.').first;
-        _handshakeBuffer = '';
-        isConnected.value = _clientSocket != null;
-        _log.info('Authenticated - clientVersion: $clientVersion, from: $_clientAddress');
-        _selectAndSendFeed();
-      } else if (!socketHeadHello.startsWith(_handshakeBuffer) && !_handshakeBuffer.startsWith(socketHeadHello)) {
+      conn.handshakeBuffer += utfString;
+      final buffer = conn.handshakeBuffer;
+      _log.fine('Handshake buffer: "${buffer.length > 100 ? '${buffer.substring(0, 100)}...' : buffer}"');
+      _log.fine('startsWith=$socketHeadHello: ${buffer.startsWith(socketHeadHello)}, endsWith=._secret: ${buffer.endsWith('.$_secret')}');
+      if (buffer.startsWith(socketHeadHello) && buffer.endsWith('.$_secret')) {
+        conn.version = buffer.split(socketHeadHello).last.split('.').first;
+        conn.handshakeBuffer = '';
+        _authenticated(conn);
+      } else if (!socketHeadHello.startsWith(buffer) && !buffer.startsWith(socketHeadHello)) {
         // Clearly not a valid handshake (e.g. HTTP request) — silently close
-        final preview = _handshakeBuffer.length > 80 ? '${_handshakeBuffer.substring(0, 80)}...' : _handshakeBuffer;
-        _log.warning('Invalid handshake from $_clientAddress:$_clientPort - "$preview"');
-        _handshakeBuffer = '';
-        _closeClient();
-        _startListener();
-      } else if (_handshakeBuffer.length > 500) {
+        final preview = buffer.length > 80 ? '${buffer.substring(0, 80)}...' : buffer;
+        _drop(conn, 'invalid handshake "$preview"', level: Level.WARNING);
+      } else if (buffer.length > 500) {
         // Too much data without valid handshake — silently close
-        _log.warning('Handshake too long from $_clientAddress:$_clientPort (${_handshakeBuffer.length} bytes)');
-        _handshakeBuffer = '';
-        _closeClient();
-        _startListener();
+        _drop(conn, 'handshake too long (${buffer.length} bytes)', level: Level.WARNING);
       } else {
-        _log.fine('Handshake incomplete, waiting for more data (${_handshakeBuffer.length} bytes so far)');
+        _log.fine('Handshake incomplete, waiting for more data (${buffer.length} bytes so far)');
       }
     } else {
       debugPrint('decode');
