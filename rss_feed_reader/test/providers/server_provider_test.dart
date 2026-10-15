@@ -9,7 +9,8 @@ import 'package:logging/logging.dart';
 import 'package:rss_feed_reader/providers/ipchecks.dart';
 import 'package:rss_feed_reader/providers/server_provider.dart';
 
-const _authTimeout = Duration(milliseconds: 300);
+// Short, for the tests about the timeout; the others keep the real 10 s, so a slow machine can't make them flaky
+const _shortAuthTimeout = Duration(milliseconds: 300);
 
 /// A free loopback port (loopback only, so Windows Firewall doesn't prompt).
 Future<int> _freePort() async {
@@ -20,13 +21,13 @@ Future<int> _freePort() async {
 }
 
 /// sendFeedOnAuth: false, because the first feed would open the real database (D:\Temp\AppDB on the dev machine).
-SocketServerHandler _createServer(int port, {Duration authTimeout = _authTimeout}) {
+SocketServerHandler _createServer(int port, {Duration authTimeout = const Duration(seconds: 10)}) {
   final container = ProviderContainer(overrides: [providerIPChecks.overrideWithValue(null)]);
   addTearDown(container.dispose);
   return container.read(Provider((ref) => SocketServerHandler(ref, port: port, secret: 'secret', bindAddress: InternetAddress.loopbackIPv4, authTimeout: authTimeout, sendFeedOnAuth: false)));
 }
 
-Future<(SocketServerHandler, int)> _startServer({Duration authTimeout = _authTimeout}) async {
+Future<(SocketServerHandler, int)> _startServer({Duration authTimeout = const Duration(seconds: 10)}) async {
   final port = await _freePort();
   final server = _createServer(port, authTimeout: authTimeout);
   addTearDown(server.dispose);
@@ -53,12 +54,12 @@ class _Peer {
   void authenticate({String secret = 'secret'}) => socket.write('$socketHeadHello$socketVersion.$secret');
 }
 
-/// Connects once the server listens: it binds asynchronously.
-Future<_Peer> _connect(int port) async {
+/// Connects once the server listens: it binds asynchronously. [from] picks another loopback source address.
+Future<_Peer> _connect(int port, {String? from}) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (true) {
     try {
-      final socket = await Socket.connect(InternetAddress.loopbackIPv4, port, timeout: const Duration(seconds: 1));
+      final socket = await Socket.connect(InternetAddress.loopbackIPv4, port, sourceAddress: from, timeout: const Duration(seconds: 1));
       addTearDown(socket.destroy);
       return _Peer(socket);
     } on SocketException {
@@ -104,6 +105,7 @@ void main() {
     first.authenticate();
     await _until(() => server.isConnected.value == true);
     expect(server.clientIP, '127.0.0.1');
+    expect(server.clientVersion, socketVersion);
 
     first.socket.setRawOption(_resetOnClose());
     first.socket.destroy();
@@ -133,7 +135,7 @@ void main() {
 
   test('a silent client is dropped after the auth timeout and never shows as connected', () async {
     final log = _captureLog();
-    final (server, port) = await _startServer();
+    final (server, port) = await _startServer(authTimeout: _shortAuthTimeout);
     final changes = <bool?>[];
     server.isConnected.addListener(() => changes.add(server.isConnected.value));
 
@@ -147,7 +149,7 @@ void main() {
 
   test('a client with the wrong secret is dropped after the auth timeout', () async {
     final log = _captureLog();
-    final (server, port) = await _startServer();
+    final (server, port) = await _startServer(authTimeout: _shortAuthTimeout);
 
     final wrong = await _connect(port);
     expect(await wrong.greeting, _hello);
@@ -195,9 +197,9 @@ void main() {
     expect(phone.isClosed, isFalse);
   });
 
-  test('a flood of silent connections cannot lock out the phone', () async {
+  test('when too many connections are pending, the oldest one makes room', () async {
     final log = _captureLog();
-    final (server, port) = await _startServer(authTimeout: const Duration(seconds: 10));
+    final (server, port) = await _startServer();
 
     final silent = <_Peer>[];
     for (var i = 0; i < 4; i++) {
@@ -212,6 +214,45 @@ void main() {
     expect(log, anyElement(contains('too many pending connections')));
     phone.authenticate();
     await _until(() => server.isConnected.value == true);
+  });
+
+  test('a flood from one address does not push out the phone while it authenticates', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+
+    final phone = await _connect(port);
+    expect(await phone.greeting, _hello);
+    final flood = <_Peer>[];
+    for (var i = 0; i < 3 * 4; i++) {
+      final peer = await _connect(port, from: '127.0.0.2');
+      expect(await peer.greeting, _hello);
+      flood.add(peer);
+    }
+    await _until(() => flood.where((peer) => peer.isClosed).length == flood.length - 3); // the flood made room among its own
+    expect(phone.isClosed, isFalse);
+    expect(log.where((m) => m.contains('too many pending')), everyElement(startsWith('Dropped 127.0.0.2:')));
+
+    phone.authenticate();
+    await _until(() => server.isConnected.value == true);
+    expect(server.clientIP, '127.0.0.1');
+  });
+
+  test('disposing the server drops pending and authenticated connections', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+
+    final pending = await _connect(port);
+    expect(await pending.greeting, _hello);
+    final client = await _connect(port);
+    expect(await client.greeting, _hello);
+    client.authenticate();
+    await _until(() => server.isConnected.value == true);
+
+    server.dispose();
+    await pending.closed;
+    await client.closed;
+    expect(server.isConnected.value, isFalse);
+    expect(log.where((m) => m.contains('server disposed')), hasLength(2));
   });
 
   test('disposing the server while it is still binding leaves the port free', () async {

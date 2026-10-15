@@ -16,8 +16,9 @@ const defaultPort = kDebugMode ? 3344 : 3344;
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
 const codeAlreadyConnected = -99;
-// Connections still waiting to authenticate; when another arrives the oldest is dropped, so a flood can't lock out the phone
+// Connections still waiting to authenticate; when another arrives, one of the address with the most pending ones is dropped
 const _maxPending = 4;
+const _maxListenRetryDelay = Duration(minutes: 5);
 // const blockedIP = ['45.', '89'];
 
 final providerSocketServer = Provider<SocketServerHandler>((ref) {
@@ -54,6 +55,9 @@ class SocketServerHandler {
   final bool _sendFeedOnAuth;
   final Ref ref;
   ServerSocket? _serverSocket;
+  Timer? _listenRetryTimer;
+  Duration _listenRetryDelay = Duration.zero;
+  DateTime _listeningSince = DateTime.now();
   final String _secret;
   int currentTweetIndex = 0;
   _Connection? _client; // the authenticated client, at most one
@@ -85,6 +89,7 @@ class SocketServerHandler {
             return;
           }
           _serverSocket = serverSocket..listen(_newConnection, onDone: _serverDone, onError: _serverError);
+          _listeningSince = DateTime.now();
           _log.fine('_startListener');
         } else {
           isConnected.value = null;
@@ -95,11 +100,24 @@ class SocketServerHandler {
       }
     } catch (err) {
       _log.warning('_startListener()-unable to start', err);
+      _retryListenerLater();
     }
+  }
+
+  /// Listens again after a delay that doubles on each failure (1 s up to 5 min), so a bind that keeps failing or a
+  /// listener that keeps erroring neither leaves the server deaf nor floods the log.
+  void _retryListenerLater() {
+    if (_disposed) return;
+    _listenRetryDelay = _listenRetryDelay == Duration.zero ? const Duration(seconds: 1) : _listenRetryDelay * 2;
+    if (_listenRetryDelay > _maxListenRetryDelay) _listenRetryDelay = _maxListenRetryDelay;
+    _log.info('Listening again in ${_listenRetryDelay.inSeconds} s');
+    _listenRetryTimer?.cancel();
+    _listenRetryTimer = Timer(_listenRetryDelay, _startListener);
   }
 
   void dispose() {
     _disposed = true;
+    _listenRetryTimer?.cancel();
     _closeServerListener();
     for (final conn in [..._pending, if (_client != null) _client!]) {
       _drop(conn, 'server disposed');
@@ -112,13 +130,15 @@ class SocketServerHandler {
       return;
     }
     // The listener stays open while clients connect and only dispose() closes it, so the OS ended it: listen again
-    _log.warning('_serverDone()-listener closed unexpectedly, restarting');
+    _log.warning('_serverDone()-listener closed unexpectedly');
     _serverSocket = null;
-    _startListener();
+    // One that ran for a while failed by chance rather than in a loop: start the backoff over
+    if (DateTime.now().difference(_listeningSince) > const Duration(minutes: 1)) _listenRetryDelay = Duration.zero;
+    _retryListenerLater();
   }
 
   void _serverError(Object err) {
-    // The listener keeps running after an error; if it ends, _serverDone listens again
+    // dart:io ends the listener after an error, so _serverDone follows and listens again
     _log.warning('_serverError($err)', err);
   }
 
@@ -147,11 +167,11 @@ class SocketServerHandler {
       return;
     }
     // The listener stays open: a connected client may be stale (e.g. a phone that dropped off Wi-Fi), and its replacement must get through
-    if (_pending.length >= _maxPending) _drop(_pending.first, 'too many pending connections', level: Level.WARNING);
+    if (_pending.length >= _maxPending) _drop(_evictionCandidate(), 'too many pending connections', level: Level.WARNING);
     final conn = _Connection(socket, address, remotePort);
     _pending.add(conn);
     conn.authTimer = Timer(_authTimeout, () => _drop(conn, 'no authentication within ${_authTimeout.inMilliseconds / 1000} s', level: Level.WARNING));
-    socket.listen((data) => _clientDataReceived(conn, data), onDone: () => _drop(conn, 'closed by peer'), onError: (Object err) => _drop(conn, 'socket error: $err', level: Level.WARNING));
+    socket.listen((data) => _clientDataReceived(conn, data), onDone: () => _drop(conn, 'closed by peer'), onError: (Object err) => _drop(conn, 'socket error', level: Level.WARNING, error: err));
     // Write errors also arrive in onError above; this only keeps them from surfacing again as unhandled errors
     socket.done.then((_) {}, onError: (Object err) => _log.fine('Client socket ${conn.label} done with error: $err'));
     _log.info('Connection from ${conn.label} awaiting authentication (${_pending.length} pending)');
@@ -160,13 +180,24 @@ class SocketServerHandler {
     _log.fine('SENT: $socketHeadHello$socketVersion');
   }
 
+  /// The oldest pending connection of the address with the most pending ones (the oldest overall on a tie), so a flood
+  /// from one address only pushes out its own connections and not the phone's.
+  _Connection _evictionCandidate() {
+    final counts = <String, int>{};
+    for (final conn in _pending) {
+      counts[conn.address] = (counts[conn.address] ?? 0) + 1;
+    }
+    final busiest = counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+    return _pending.firstWhere((conn) => conn.address == busiest);
+  }
+
   /// Closes [conn] and logs why; safe to call again for a connection that is already gone.
-  void _drop(_Connection conn, String reason, {Level level = Level.INFO}) {
+  void _drop(_Connection conn, String reason, {Level level = Level.INFO, Object? error}) {
     if (conn.dropped) return;
     conn.dropped = true;
     conn.authTimer?.cancel();
     _pending.remove(conn);
-    _log.log(level, 'Dropped ${conn.label}: $reason');
+    _log.log(level, 'Dropped ${conn.label}: $reason', error);
     if (identical(conn, _client)) {
       _client = null;
       isConnected.value = false;
@@ -185,42 +216,42 @@ class SocketServerHandler {
     _client = conn;
     isConnected.value = true;
     _log.info('Authenticated - clientVersion: ${conn.version}, from: ${conn.label}');
-    if (_sendFeedOnAuth) _selectAndSendFeed();
+    if (_sendFeedOnAuth) _selectAndSendFeed(conn);
   }
 
-  void _clientSendData(Map<String, dynamic> json, {Socket? socket}) {
-    socket ??= _client?.socket;
-    if (socket == null) {
-      // The client was dropped while the reply was being prepared (e.g. during a database read)
-      _log.info('_clientSendData - no connected client, not sent');
+  /// Sends a reply to [conn], the connection that asked for it.
+  void _clientSendData(_Connection conn, Map<String, dynamic> json) {
+    if (!identical(conn, _client)) {
+      // Dropped or replaced while the reply was being prepared (e.g. during a database read); it must not reach the newcomer
+      _log.info('_clientSendData - ${conn.label} is no longer the client, not sent');
       return;
     }
     final strSend = jsonEncode(json);
     final lst = '${strSend.length}:$strSend';
     _log.fine('_clientSendData(${strSend.length})');
     debugPrint('lst: ${lst.length} bytes');
-    socket.add(utf8.encode(lst));
+    conn.socket.add(utf8.encode(lst));
     // socket!.write(lst);
     // socket.flush();
   }
 
-  void _selectAndSendTweet({int tweetIndex = 0}) {
+  void _selectAndSendTweet(_Connection conn, {int tweetIndex = 0}) {
     assert(tweetIndex >= -1 && tweetIndex <= 1, 'Invalid tweetIndex: $tweetIndex');
     _log.info('_selectAndSendTweet($tweetIndex)');
     final tweetProvider = ref.read(providerTweetHeader);
     if (tweetProvider.tweets.isEmpty) {
       _log.info('_selectAndSendTweet - no unread tweets');
-      _clientSendData(_createJSON(code: -2, data: 'No tweets'));
+      _clientSendData(conn, _createJSON(code: -2, data: 'No tweets'));
     }
     if (tweetIndex == -1) {
       if (--currentTweetIndex < 0) currentTweetIndex = tweetProvider.tweets.length - 1;
     } else if (tweetIndex == 1) {
       if (++currentTweetIndex >= tweetProvider.tweets.length) currentTweetIndex = 0;
     }
-    _clientSendData(_createJSON(code: 2, data: tweetProvider.tweets[currentTweetIndex].toJson()));
+    _clientSendData(conn, _createJSON(code: 2, data: tweetProvider.tweets[currentTweetIndex].toJson()));
   }
 
-  Future<void> _selectAndSendFeed({int changeIndex = 0}) async {
+  Future<void> _selectAndSendFeed(_Connection conn, {int changeIndex = 0}) async {
     _log.info('_selectAndSendFeed($changeIndex)');
     assert(changeIndex >= -1 || changeIndex <= 1, 'Invalid changeIndex: $changeIndex');
     final feedProvider = ref.read(providerFeedHeader);
@@ -233,10 +264,10 @@ class SocketServerHandler {
     }
     if (feedProvider.selectedArticle != null) {
       await feedProvider.selectedArticle!.articleDescription(ref.read(rssDatabase));
-      _clientSendData(_createJSON(code: 1, data: feedProvider.selectedArticle!.toJson()));
+      _clientSendData(conn, _createJSON(code: 1, data: feedProvider.selectedArticle!.toJson()));
     } else {
       _log.info('_selectAndSendFeed - no unread feeds');
-      _clientSendData(_createJSON(code: -1, data: 'No feeds'));
+      _clientSendData(conn, _createJSON(code: -1, data: 'No feeds'));
     }
   }
 
@@ -266,7 +297,8 @@ class SocketServerHandler {
       _log.fine('Handshake buffer: "${buffer.length > 100 ? '${buffer.substring(0, 100)}...' : buffer}"');
       _log.fine('startsWith=$socketHeadHello: ${buffer.startsWith(socketHeadHello)}, endsWith=._secret: ${buffer.endsWith('.$_secret')}');
       if (buffer.startsWith(socketHeadHello) && buffer.endsWith('.$_secret')) {
-        conn.version = buffer.split(socketHeadHello).last.split('.').first;
+        // Everything between the hello and '.<secret>', so version '1.0' isn't cut at its own dot
+        conn.version = buffer.substring(socketHeadHello.length, buffer.length - _secret.length - 1);
         conn.handshakeBuffer = '';
         _authenticated(conn);
       } else if (!socketHeadHello.startsWith(buffer) && !buffer.startsWith(socketHeadHello)) {
@@ -288,29 +320,29 @@ class SocketServerHandler {
           ref.read(rssProvider).startMonitoring();
           break;
         case 'previous_feed':
-          _selectAndSendFeed(changeIndex: -1);
+          _selectAndSendFeed(conn, changeIndex: -1);
           break;
         case 'next_feed':
-          _selectAndSendFeed(changeIndex: 1);
+          _selectAndSendFeed(conn, changeIndex: 1);
           break;
         case 'feed':
-          _selectAndSendFeed();
+          _selectAndSendFeed(conn);
           break;
         case 'previous_tweet':
-          _selectAndSendTweet(tweetIndex: -1);
+          _selectAndSendTweet(conn, tweetIndex: -1);
           break;
         case 'next_tweet':
-          _selectAndSendTweet(tweetIndex: 1);
+          _selectAndSendTweet(conn, tweetIndex: 1);
           break;
         case 'tweet':
-          _selectAndSendTweet();
+          _selectAndSendTweet(conn);
           break;
         case 'tweet_read':
           final tweetProvider = ref.read(providerTweetHeader);
           final id = json['id'] as int;
           if (id >= 0) {
             tweetProvider.removeTweet(id);
-            _selectAndSendTweet();
+            _selectAndSendTweet(conn);
           }
           break;
         case 'article_read':
@@ -318,7 +350,7 @@ class SocketServerHandler {
           final id = json['id'] as int;
           if (id >= 0) {
             feedProvider.changeArticleStatusById(id: id);
-            _selectAndSendFeed();
+            _selectAndSendFeed(conn);
           }
           break;
         default:
