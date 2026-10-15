@@ -31,6 +31,7 @@ final providerSocketServer = Provider<SocketServerHandler>((ref) {
 class SocketServerHandler {
   final _log = Logger('SocketServerHandler');
   final int port;
+  final InternetAddress? _bindAddress; // null = all IPv4 interfaces
   final Ref ref;
   ServerSocket? _serverSocket;
   String clientVersion = '';
@@ -38,9 +39,15 @@ class SocketServerHandler {
   int currentTweetIndex = 0;
   String _handshakeBuffer = '';
   Socket? _clientSocket;
+  // Socket.remoteAddress/remotePort throw once the socket is closed (e.g. reset by the peer),
+  // so the client's address is read once on connect and kept here for the UI and the log.
+  String _clientAddress = '?';
+  int _clientPort = 0;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
-  String get clientIP => _clientSocket?.remoteAddress.address ?? '?';
-  SocketServerHandler(this.ref, {this.port = defaultPort, required String secret}) : _secret = secret {
+  String get clientIP => _clientSocket != null ? _clientAddress : '?';
+  SocketServerHandler(this.ref, {this.port = defaultPort, required String secret, InternetAddress? bindAddress})
+      : _secret = secret,
+        _bindAddress = bindAddress {
     _log.info('Init - port: $port, secret: "${secret.length > 3 ? '${secret.substring(0, secret.length - 3)}***' : '***'}" (${secret.length} chars)');
     _startListener();
   }
@@ -48,7 +55,7 @@ class SocketServerHandler {
     try {
       if (_serverSocket == null) {
         if (_secret.isNotEmpty) {
-          _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, port);
+          _serverSocket = await ServerSocket.bind(_bindAddress ?? InternetAddress.anyIPv4, port);
           _serverSocket?.listen(_newConnection, onDone: _serverDone, onError: _serverError);
           _log.fine('_startListener');
         } else {
@@ -83,9 +90,19 @@ class SocketServerHandler {
   }
 
   void _newConnection(Socket socket) {
-    _log.fine('_newConnection(${socket.remoteAddress}:${socket.remotePort})');
+    final String address;
+    final int remotePort;
+    try {
+      address = socket.remoteAddress.address;
+      remotePort = socket.remotePort;
+    } catch (err) {
+      _log.warning('_newConnection()-connection already gone', err);
+      socket.destroy();
+      return;
+    }
+    _log.fine('_newConnection($address:$remotePort)');
     if (_clientSocket != null) {
-      _log.warning('_newConnection(${socket.remoteAddress}:${socket.remotePort}) - already connected, ignoring');
+      _log.warning('_newConnection($address:$remotePort) - already connected, ignoring');
       socket.destroy();
       return;
     }
@@ -97,8 +114,10 @@ class SocketServerHandler {
     }
     _closeServerListener();
     _clientSocket = socket;
+    _clientAddress = address;
+    _clientPort = remotePort;
     _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
-    _log.info('Client socket listener registered for ${socket.remoteAddress}:${socket.remotePort}');
+    _log.info('Client socket listener registered for $address:$remotePort');
     _clientSocket?.write('$socketHeadHello$socketVersion');
     _log.fine('SENT: $socketHeadHello$socketVersion');
     isConnected.value = _clientSocket != null;
@@ -106,7 +125,7 @@ class SocketServerHandler {
   }
 
   void _clientDisconnected() {
-    _log.info('_clientDisconnected called (clientSocket=${_clientSocket != null ? '${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort}' : 'null'})');
+    _log.info('_clientDisconnected called (clientSocket=${_clientSocket != null ? '$_clientAddress:$_clientPort' : 'null'})');
     if (_clientSocket == null) return; // already cleaned up
     _closeClient();
     _startListener();
@@ -116,13 +135,13 @@ class SocketServerHandler {
     if (_clientSocket == null) {
       return;
     }
-    _log.info('_closeClient(${_clientSocket?.remoteAddress})');
+    _log.info('_closeClient($_clientAddress)');
     final socket = _clientSocket;
     _clientSocket = null;
     clientVersion = '';
     _handshakeBuffer = '';
     isConnected.value = false;
-    socket?.close();
+    // Not close(): it throws while the greeting's flush() is still pending, and destroy() closes both ways anyway
     socket?.destroy();
   }
 
@@ -196,7 +215,7 @@ class SocketServerHandler {
 
   void _clientDataReceived(Uint8List data) {
     final utfString = utf8.decode(data);
-    _log.info('_clientDataReceived(${data.length} bytes) from ${_clientSocket?.remoteAddress}');
+    _log.info('_clientDataReceived(${data.length} bytes) from $_clientAddress');
     if (clientVersion.isEmpty) {
       // Awaiting handshake response — buffer data (may arrive in multiple TCP packets)
       _handshakeBuffer += utfString;
@@ -206,18 +225,18 @@ class SocketServerHandler {
         clientVersion = _handshakeBuffer.split(socketHeadHello).last.split('.').first;
         _handshakeBuffer = '';
         isConnected.value = _clientSocket != null;
-        _log.info('Authenticated - clientVersion: $clientVersion, from: ${_clientSocket?.remoteAddress}');
+        _log.info('Authenticated - clientVersion: $clientVersion, from: $_clientAddress');
         _selectAndSendFeed();
       } else if (!socketHeadHello.startsWith(_handshakeBuffer) && !_handshakeBuffer.startsWith(socketHeadHello)) {
         // Clearly not a valid handshake (e.g. HTTP request) — silently close
         final preview = _handshakeBuffer.length > 80 ? '${_handshakeBuffer.substring(0, 80)}...' : _handshakeBuffer;
-        _log.warning('Invalid handshake from ${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort} - "$preview"');
+        _log.warning('Invalid handshake from $_clientAddress:$_clientPort - "$preview"');
         _handshakeBuffer = '';
         _closeClient();
         _startListener();
       } else if (_handshakeBuffer.length > 500) {
         // Too much data without valid handshake — silently close
-        _log.warning('Handshake too long from ${_clientSocket?.remoteAddress}:${_clientSocket?.remotePort} (${_handshakeBuffer.length} bytes)');
+        _log.warning('Handshake too long from $_clientAddress:$_clientPort (${_handshakeBuffer.length} bytes)');
         _handshakeBuffer = '';
         _closeClient();
         _startListener();
