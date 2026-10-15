@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -50,10 +51,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
-    }
-
     defaultConfig {
         applicationId = "no.talgoe.news_client_application"
         // You can update the following values to match your application needs.
@@ -98,6 +95,14 @@ android {
             
             output.outputFileName = "$appName-$vName+$vCode-type.apk"
         }
+    }
+}
+
+// kotlinOptions.jvmTarget is deprecated from Kotlin 2.2 and an error from 2.3; keep in step with
+// compileOptions above.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_11
     }
 }
 
