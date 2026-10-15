@@ -8,14 +8,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:rss_feed_reader/providers/ipchecks.dart';
 import 'package:rss_feed_reader/providers/server_provider.dart';
 
-/// A server on a free loopback port (loopback only, so Windows Firewall doesn't prompt).
-Future<(SocketServerHandler, int)> _startServer() async {
+/// A free loopback port (loopback only, so Windows Firewall doesn't prompt).
+Future<int> _freePort() async {
   final probe = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
   final port = probe.port;
   await probe.close();
+  return port;
+}
+
+SocketServerHandler _createServer(int port) {
   final container = ProviderContainer(overrides: [providerIPChecks.overrideWithValue(null)]);
   addTearDown(container.dispose);
-  final server = container.read(Provider((ref) => SocketServerHandler(ref, port: port, secret: 'secret', bindAddress: InternetAddress.loopbackIPv4)));
+  return container.read(Provider((ref) => SocketServerHandler(ref, port: port, secret: 'secret', bindAddress: InternetAddress.loopbackIPv4)));
+}
+
+Future<(SocketServerHandler, int)> _startServer() async {
+  final port = await _freePort();
+  final server = _createServer(port);
   addTearDown(server.dispose);
   return (server, port);
 }
@@ -66,18 +75,29 @@ void main() {
     expect(server.clientIP, '127.0.0.1');
   });
 
-  test('dropping a client while its greeting is still being sent does not throw', () async {
+  test('a handshake that is not UTF-8 drops the client and the server listens again', () async {
     final (server, port) = await _startServer();
-    final dropped = Completer<void>();
-    server.isConnected.addListener(() {
-      // Runs right after _newConnection() has started flushing the greeting
-      if (server.isConnected.value == true && !dropped.isCompleted) scheduleMicrotask(() => dropped.complete(Future.sync(server.dispose)));
-    });
 
-    final client = await _connect(port);
-    addTearDown(client.destroy);
-    await dropped.future;
+    final probe = await _connect(port);
+    addTearDown(probe.destroy);
+    final dropped = Completer<void>();
+    probe.listen((_) {}, onError: (_) {}, onDone: dropped.complete);
+    probe.add([0x16, 0x03, 0x01, 0xff, 0xfe]); // binary, like a TLS ClientHello from a scanner
+    await dropped.future.timeout(const Duration(seconds: 5));
     expect(server.isConnected.value, isFalse);
     expect(server.clientIP, '?');
+
+    final next = await _connect(port);
+    addTearDown(next.destroy);
+    expect(await _greeting(next), '$socketHeadHello$socketVersion');
+  });
+
+  test('disposing the server while it is still binding leaves the port free', () async {
+    final port = await _freePort();
+    _createServer(port).dispose(); // the constructor's bind is still pending
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+
+    final rebind = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+    await rebind.close();
   });
 }

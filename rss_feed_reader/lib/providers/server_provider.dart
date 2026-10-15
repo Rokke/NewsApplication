@@ -43,8 +43,9 @@ class SocketServerHandler {
   // so the client's address is read once on connect and kept here for the UI and the log.
   String _clientAddress = '?';
   int _clientPort = 0;
+  bool _disposed = false;
   ValueNotifier<bool?> isConnected = ValueNotifier(false);
-  String get clientIP => _clientSocket != null ? _clientAddress : '?';
+  String get clientIP => _clientAddress;
   SocketServerHandler(this.ref, {this.port = defaultPort, required String secret, InternetAddress? bindAddress})
       : _secret = secret,
         _bindAddress = bindAddress {
@@ -55,8 +56,14 @@ class SocketServerHandler {
     try {
       if (_serverSocket == null) {
         if (_secret.isNotEmpty) {
-          _serverSocket = await ServerSocket.bind(_bindAddress ?? InternetAddress.anyIPv4, port);
-          _serverSocket?.listen(_newConnection, onDone: _serverDone, onError: _serverError);
+          final serverSocket = await ServerSocket.bind(_bindAddress ?? InternetAddress.anyIPv4, port);
+          if (_disposed) {
+            // Disposed while binding (e.g. settings saved): don't leave an orphan listener holding the port
+            _log.info('_startListener()-disposed while binding');
+            serverSocket.close();
+            return;
+          }
+          _serverSocket = serverSocket..listen(_newConnection, onDone: _serverDone, onError: _serverError);
           _log.fine('_startListener');
         } else {
           isConnected.value = null;
@@ -71,6 +78,7 @@ class SocketServerHandler {
   }
 
   void dispose() {
+    _disposed = true;
     _closeServerListener();
     _closeClient();
   }
@@ -108,7 +116,7 @@ class SocketServerHandler {
     }
     // Check permanent block list (prefix-based, e.g. '45.', '89.')
     final ipCheck = ref.read(providerIPChecks);
-    if (ipCheck != null && ipCheck.isBlocked(socket)) {
+    if (ipCheck != null && ipCheck.isBlocked(address)) {
       socket.destroy();
       return;
     }
@@ -116,12 +124,14 @@ class SocketServerHandler {
     _clientSocket = socket;
     _clientAddress = address;
     _clientPort = remotePort;
-    _clientSocket?.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
+    socket.listen(_clientDataReceived, onDone: _clientDisconnected, onError: _clientError);
+    // Write errors also arrive in _clientError; this only keeps them from surfacing again as unhandled errors
+    socket.done.then((_) {}, onError: (Object err) => _log.fine('Client socket done with error: $err'));
     _log.info('Client socket listener registered for $address:$remotePort');
-    _clientSocket?.write('$socketHeadHello$socketVersion');
+    // No flush(): while it is pending, add() and close() on the socket throw, and its failure would go unhandled
+    socket.write('$socketHeadHello$socketVersion');
     _log.fine('SENT: $socketHeadHello$socketVersion');
-    isConnected.value = _clientSocket != null;
-    _clientSocket?.flush();
+    isConnected.value = true;
   }
 
   void _clientDisconnected() {
@@ -138,10 +148,11 @@ class SocketServerHandler {
     _log.info('_closeClient($_clientAddress)');
     final socket = _clientSocket;
     _clientSocket = null;
+    _clientAddress = '?';
+    _clientPort = 0;
     clientVersion = '';
     _handshakeBuffer = '';
     isConnected.value = false;
-    // Not close(): it throws while the greeting's flush() is still pending, and destroy() closes both ways anyway
     socket?.destroy();
   }
 
@@ -214,7 +225,8 @@ class SocketServerHandler {
   }
 
   void _clientDataReceived(Uint8List data) {
-    final utfString = utf8.decode(data);
+    // allowMalformed: binary probes (e.g. TLS) must fail the handshake check below, not throw out of this callback
+    final utfString = utf8.decode(data, allowMalformed: true);
     _log.info('_clientDataReceived(${data.length} bytes) from $_clientAddress');
     if (clientVersion.isEmpty) {
       // Awaiting handshake response — buffer data (may arrive in multiple TCP packets)

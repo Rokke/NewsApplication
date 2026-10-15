@@ -56,9 +56,8 @@ class IPChecks {
     }));
   }
 
-  /// Returns true if the socket's IP matches a blocked prefix
-  bool isBlocked(Socket socket) {
-    final addr = socket.remoteAddress.address;
+  /// Returns true if [addr] (the remote IP, read on accept) matches a blocked prefix
+  bool isBlocked(String addr) {
     for (final entry in blockedPrefixes) {
       if (addr.startsWith(entry.prefix)) {
         _log.warning('Connection from $addr blocked (matches prefix: ${entry.prefix}, reason: ${entry.reason})');
