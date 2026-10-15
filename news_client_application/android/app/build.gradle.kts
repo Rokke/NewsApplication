@@ -8,6 +8,28 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release signing. Neither the keystore nor its passwords are in the repo. key.properties is
+// looked up in this order, first hit wins:
+//   1. android/key.properties                      per-project override (gitignored)
+//   2. %OneDriveConsumer%\Privat\key.properties    the shared copy, on Windows
+//   3. ~/Library/CloudStorage/OneDrive-Personal/Privat/key.properties   the same, on macOS
+// `OneDriveConsumer` is the *personal* OneDrive; `OneDrive` can be a work one.
+// A relative storeFile resolves against the folder of the key.properties that names it.
+// Nothing here throws at configuration time: without a keystore, debug builds, `flutter run` and
+// `flutter test` still work, and a release build is signed with the debug key (see buildTypes).
+val keystorePropertiesFile: File? = listOfNotNull(
+    rootProject.file("key.properties"),
+    System.getenv("OneDriveConsumer")?.let { File(it, "Privat/key.properties") },
+    File(System.getProperty("user.home"), "Library/CloudStorage/OneDrive-Personal/Privat/key.properties"),
+).firstOrNull { it.isFile }
+val keystoreProperties = Properties().apply {
+    keystorePropertiesFile?.let { f -> FileInputStream(f).use { load(it) } }
+}
+val releaseStoreFile: File? = keystoreProperties.getProperty("storeFile")
+    ?.let { keystorePropertiesFile!!.absoluteFile.parentFile.resolve(it) }
+    ?.takeIf { it.isFile }
+logger.info("Release signing: key.properties = $keystorePropertiesFile, keystore = $releaseStoreFile")
+
 android {
     namespace = "no.talgoe.news_client_application"
     compileSdk = flutter.compileSdkVersion
@@ -33,19 +55,14 @@ android {
         versionName = flutter.versionName
     }
 
-    // Inne i android{
     signingConfigs {
-        val hasSigningInfo = project.hasProperty("ReleaseStoreFile") &&
-                             project.hasProperty("ReleaseStorePassword") &&
-                             project.hasProperty("ReleaseKeyAlias") &&
-                             project.hasProperty("ReleaseKeyPassword")
-
-        if (hasSigningInfo) {
+        // Only created when a keystore was found; without one, release falls back to the debug key.
+        if (releaseStoreFile != null) {
             create("release") {
-                storeFile = file(project.property("ReleaseStoreFile") as String)
-                storePassword = project.property("ReleaseStorePassword") as String
-                keyAlias = project.property("ReleaseKeyAlias") as String
-                keyPassword = project.property("ReleaseKeyPassword") as String
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
             }
         }
     }
