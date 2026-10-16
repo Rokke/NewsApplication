@@ -1,32 +1,39 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:news_client_application/providers/socket_provider.dart';
 
 /// What the fake server does once a client has authenticated.
-enum _OnAuth { sendInUse, close, stayConnected }
+enum _OnAuth { sendInUse, close, stayConnected, sendPartialAndClose, sendFeed }
 
-/// A loopback stand-in for the desktop app: greets, waits for the auth, then does what [onAuth] says.
+/// A loopback stand-in for the desktop app: greets, waits for the auth, then does what [script] says; connection n
+/// follows step n, and the last step repeats.
 class _FakeServer {
-  _FakeServer._(this._server, this.onAuth) {
+  _FakeServer._(this._server, this.script) {
     _server.listen(_accept);
   }
-  static Future<_FakeServer> start(_OnAuth onAuth) async {
+  static Future<_FakeServer> start(List<_OnAuth> script) async {
     // Loopback only, so Windows Firewall doesn't prompt; port 0 picks a free one
-    final server = _FakeServer._(await ServerSocket.bind(InternetAddress.loopbackIPv4, 0), onAuth);
+    final server = _FakeServer._(await ServerSocket.bind(InternetAddress.loopbackIPv4, 0), script);
     addTearDown(server._close);
     return server;
   }
 
   final ServerSocket _server;
   final _sockets = <Socket>[];
-  _OnAuth onAuth;
+  final List<_OnAuth> script;
   int connections = 0;
   int get port => _server.port;
 
+  void _send(Socket socket, Map<String, dynamic> message) {
+    final json = jsonEncode(message);
+    socket.add(utf8.encode('${json.length}:$json'));
+  }
+
   void _accept(Socket socket) {
-    connections++;
+    final onAuth = script[min(connections++, script.length - 1)];
     _sockets.add(socket);
     var received = '';
     socket.listen((data) {
@@ -34,13 +41,18 @@ class _FakeServer {
       if (!received.endsWith('.secret')) return;
       switch (onAuth) {
         case _OnAuth.sendInUse:
-          final json = jsonEncode({'code': codeAlreadyConnected, 'data': '192.168.1.20'});
-          socket.add(utf8.encode('${json.length}:$json'));
+          _send(socket, {'code': codeAlreadyConnected, 'data': '192.168.1.20'});
           socket.close();
         case _OnAuth.close:
           socket.close();
         case _OnAuth.stayConnected:
           break;
+        case _OnAuth.sendPartialAndClose:
+          // The start of a frame, like a connection lost in the middle of an article
+          socket.add(utf8.encode('500:{"code":1,"data":'));
+          socket.close();
+        case _OnAuth.sendFeed:
+          _send(socket, {'code': -1, 'data': 'No feeds', 'articleCount': 0, 'articleIndex': 0, 'tweetCount': 0, 'tweetIndex': 0, 'running': true});
       }
     }, onError: (_) {});
     socket.done.then((_) {}, onError: (_) {});
@@ -72,7 +84,7 @@ Future<void> _until(bool Function() condition, {Duration timeout = const Duratio
 
 void main() {
   test('stops reconnecting after codeAlreadyConnected', () async {
-    final server = await _FakeServer.start(_OnAuth.sendInUse);
+    final server = await _FakeServer.start([_OnAuth.sendInUse]);
     final client = _createClient(server.port);
 
     await _until(() => client.status.value == SocketStatus.serverInUse);
@@ -84,21 +96,28 @@ void main() {
   });
 
   test('reconnects when the server just closes', () async {
-    final server = await _FakeServer.start(_OnAuth.close);
+    final server = await _FakeServer.start([_OnAuth.close]);
     _createClient(server.port);
 
     await _until(() => server.connections == 2);
   });
 
   test('reconnect() connects again', () async {
-    final server = await _FakeServer.start(_OnAuth.sendInUse);
+    final server = await _FakeServer.start([_OnAuth.sendInUse, _OnAuth.stayConnected]);
     final client = _createClient(server.port);
     await _until(() => client.status.value == SocketStatus.serverInUse);
 
-    server.onAuth = _OnAuth.stayConnected;
     client.reconnect();
     await _until(() => server.connections == 2);
     await _until(() => client.status.value == SocketStatus.connected);
     expect(client.inUseBy, isNull);
+  });
+
+  test('a frame cut off by a lost connection does not garble the next connection', () async {
+    final server = await _FakeServer.start([_OnAuth.sendPartialAndClose, _OnAuth.sendFeed]);
+    final client = _createClient(server.port);
+
+    await _until(() => server.connections == 2);
+    await _until(() => client.status.value == SocketStatus.connectedRunning);
   });
 }

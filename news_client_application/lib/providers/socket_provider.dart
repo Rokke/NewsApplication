@@ -111,7 +111,7 @@ class SocketProvider {
     }
   }
 
-  void _onConnectionEstablished() {
+  void _resetBackoff() {
     _consecutiveFailures = 0;
     _currentRetryMs = _initialRetryMs;
     _addressIndex = 0;
@@ -136,7 +136,7 @@ class SocketProvider {
         _client!.flush().then((_) => _log.fine('Auth response flushed'));
         status.value = SocketStatus.connected;
         _log.info('Handshake complete - connected to $connectedAddress');
-        _onConnectionEstablished();
+        _resetBackoff();
       } else {
         _log.severe('Invalid server greeting: "${utfString.substring(0, utfString.length.clamp(0, 100))}"');
         _closeConnection();
@@ -208,9 +208,7 @@ class SocketProvider {
     _log.info('Reconnecting on request (server was in use by ${inUseBy ?? "?"})');
     _serverInUse = false;
     inUseBy = null;
-    _consecutiveFailures = 0;
-    _currentRetryMs = _initialRetryMs;
-    _addressIndex = 0;
+    _resetBackoff();
     _scheduleConnect(0);
   }
 
@@ -249,6 +247,9 @@ class SocketProvider {
     _client?.destroy();
     _client = null;
     _serverVersion = '';
+    // A frame cut off with the connection must not swallow the first frame of the next one
+    dataLength = 0;
+    dataToParse = '';
     status.value = _serverInUse ? SocketStatus.serverInUse : SocketStatus.disconnected;
   }
 }
