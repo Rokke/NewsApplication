@@ -67,6 +67,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                   IconButton(onPressed: () => socketProvider.clientSendData({'command': showFeeds ? 'next_feed' : 'next_tweet'}), icon: const Icon(Icons.skip_next))
                 else if (status == SocketStatus.waiting)
                   const CircularProgressIndicator()
+                else if (status == SocketStatus.serverInUse)
+                  IconButton(onPressed: socketProvider.reconnect, tooltip: 'I bruk av en annen enhet - koble til igjen', icon: const Icon(Icons.phonelink_off, color: Colors.orange))
                 else
                   const Icon(Icons.no_cell, color: Colors.red),
                 if (status == SocketStatus.connectedNotRunning)
@@ -82,6 +84,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                       stream: socketProvider.stream,
                       initialData: null,
                       builder: (BuildContext context, AsyncSnapshot<SocketResponse> snapshot) {
+                        // Inside the StreamBuilder rather than instead of it: the stream can only be listened to once
+                        if (status == SocketStatus.serverInUse) return _serverInUse(socketProvider);
                         if (snapshot.hasData) {
                           if (snapshot.data != null) {
                             if (snapshot.data!.code >= 1 && snapshot.data!.newsItem != null) {
@@ -192,4 +196,22 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
     );
   }
+
+  Widget _serverInUse(SocketProvider socketProvider) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Serveren er i bruk av en annen enhet${socketProvider.inUseBy != null ? ' (${socketProvider.inUseBy})' : ''}',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: socketProvider.reconnect, child: const Text('Koble til igjen')),
+        ],
+      ),
+    ),
+  );
 }

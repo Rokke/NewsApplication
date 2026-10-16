@@ -34,15 +34,20 @@ Future<(SocketServerHandler, int)> _startServer({Duration authTimeout = const Du
   return (server, port);
 }
 
-/// A connected test client that collects the server's greeting and notices when the server drops it.
+/// A connected test client that collects the server's greeting and what follows it, and notices when the server drops it.
 class _Peer {
   _Peer(this.socket) {
     socket.listen((data) {
-      if (!_greeting.isCompleted) _greeting.complete(utf8.decode(data));
+      if (!_greeting.isCompleted) {
+        _greeting.complete(utf8.decode(data));
+      } else {
+        _received.addAll(data);
+      }
     }, onError: (_) => _setClosed(), onDone: _setClosed);
   }
   final Socket socket;
   final _greeting = Completer<String>();
+  final _received = <int>[];
   final _closed = Completer<void>();
   void _setClosed() {
     if (!_closed.isCompleted) _closed.complete();
@@ -52,6 +57,19 @@ class _Peer {
   Future<void> get closed => _closed.future.timeout(const Duration(seconds: 5));
   bool get isClosed => _closed.isCompleted;
   void authenticate({String secret = 'secret'}) => socket.write('$socketHeadHello$socketVersion.$secret');
+
+  /// Everything received after the greeting.
+  String get received => utf8.decode(_received);
+
+  /// The one `<length>:<json>` frame received after the greeting.
+  Map<String, dynamic> get frame {
+    final text = received;
+    final colon = text.indexOf(':');
+    expect(colon, greaterThan(0), reason: 'a frame starts with its length: "$text"');
+    final json = text.substring(colon + 1);
+    expect(json.length, int.parse(text.substring(0, colon)), reason: 'the length matches the JSON');
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
 }
 
 /// Connects once the server listens: it binds asynchronously. [from] picks another loopback source address.
@@ -179,7 +197,7 @@ void main() {
     expect(phone.isClosed, isFalse);
   });
 
-  test('a client that authenticates replaces a stale authenticated one', () async {
+  test('a client that authenticates silently replaces a stale authenticated one from the same address', () async {
     final log = _captureLog();
     final (server, port) = await _startServer();
 
@@ -192,9 +210,30 @@ void main() {
     expect(await phone.greeting, _hello, reason: 'the server keeps listening while a client is connected');
     phone.authenticate();
     await stale.closed;
-    expect(log, anyElement(contains('Dropped 127.0.0.1:${stale.socket.port}: replaced by 127.0.0.1:${phone.socket.port}')));
+    expect(stale.received, isEmpty, reason: 'the same phone reconnecting must not be told to stop');
+    expect(log, anyElement(endsWith('Dropped 127.0.0.1:${stale.socket.port}: replaced by 127.0.0.1:${phone.socket.port}')));
     expect(server.isConnected.value, isTrue);
     expect(phone.isClosed, isFalse);
+  });
+
+  test('a client from another address is told the server is in use before it is replaced', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+
+    final phone = await _connect(port);
+    expect(await phone.greeting, _hello);
+    phone.authenticate();
+    await _until(() => server.isConnected.value == true);
+
+    final tablet = await _connect(port, from: '127.0.0.2');
+    expect(await tablet.greeting, _hello);
+    tablet.authenticate();
+    await phone.closed;
+    expect(phone.frame, {'code': codeAlreadyConnected, 'data': '127.0.0.2'});
+    expect(log, anyElement('Dropped 127.0.0.1:${phone.socket.port}: replaced by 127.0.0.2:${tablet.socket.port} from another address, sent codeAlreadyConnected'));
+    expect(server.isConnected.value, isTrue);
+    expect(server.clientIP, '127.0.0.2');
+    expect(tablet.isClosed, isFalse);
   });
 
   test('when too many connections are pending, the oldest one makes room', () async {

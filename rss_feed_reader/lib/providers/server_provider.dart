@@ -15,10 +15,14 @@ import 'package:rss_feed_reader/providers/tweet_list.dart';
 const defaultPort = kDebugMode ? 3344 : 3344;
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
+// Sent to the client, as its last message, when a client from another address replaces it: that device then stops
+// reconnecting, so two devices with the same secret don't keep pushing each other off
 const codeAlreadyConnected = -99;
 // Connections still waiting to authenticate; when another arrives, one of the address with the most pending ones is dropped
 const _maxPending = 4;
 const _maxListenRetryDelay = Duration(minutes: 5);
+// How long a dropped client gets to receive its last message before the socket is destroyed anyway
+const _lastMessageTimeout = Duration(seconds: 2);
 // const blockedIP = ['45.', '89'];
 
 final providerSocketServer = Provider<SocketServerHandler>((ref) {
@@ -192,7 +196,8 @@ class SocketServerHandler {
   }
 
   /// Closes [conn] and logs why; safe to call again for a connection that is already gone.
-  void _drop(_Connection conn, String reason, {Level level = Level.INFO, Object? error}) {
+  /// [lastMessage] is sent before the socket closes.
+  void _drop(_Connection conn, String reason, {Level level = Level.INFO, Object? error, Map<String, dynamic>? lastMessage}) {
     if (conn.dropped) return;
     conn.dropped = true;
     conn.authTimer?.cancel();
@@ -202,17 +207,40 @@ class SocketServerHandler {
       _client = null;
       isConnected.value = false;
     }
-    // Only destroy(): close() throws while a write is pending, which would abort the cleanup
+    if (lastMessage != null) {
+      _sendLastAndClose(conn, lastMessage);
+    } else {
+      // Only destroy(): close() throws while a write is pending, which would abort the cleanup
+      conn.socket.destroy();
+    }
+  }
+
+  /// destroy() right after add() would throw the message away, so close() first and destroy() once it is out or too slow.
+  Future<void> _sendLastAndClose(_Connection conn, Map<String, dynamic> message) async {
+    try {
+      conn.socket.add(utf8.encode(_frame(message)));
+      await conn.socket.close().timeout(_lastMessageTimeout);
+    } catch (err) {
+      _log.fine('Last message to ${conn.label} not delivered: $err');
+    }
     conn.socket.destroy();
   }
 
   void _authenticated(_Connection conn) {
     conn.authTimer?.cancel();
     _pending.remove(conn);
-    // The newest client wins: the current one is most likely the same phone, reconnecting after its connection went silent.
+    // The newest client wins: from the same address it is most likely the same phone, reconnecting after its connection
+    // went silent, so the stale one is dropped silently. From another address it is another device with the same secret:
+    // the current one is told codeAlreadyConnected, so it stops reconnecting instead of pushing this one off in turn.
     // Dropping it first also flips isConnected false -> true, so the app bar picks up the new address.
     final previous = _client;
-    if (previous != null) _drop(previous, 'replaced by ${conn.label}');
+    if (previous != null) {
+      if (previous.address == conn.address) {
+        _drop(previous, 'replaced by ${conn.label}');
+      } else {
+        _drop(previous, 'replaced by ${conn.label} from another address, sent codeAlreadyConnected', lastMessage: {'code': codeAlreadyConnected, 'data': conn.address});
+      }
+    }
     _client = conn;
     isConnected.value = true;
     _log.info('Authenticated - clientVersion: ${conn.version}, from: ${conn.label}');
@@ -226,13 +254,18 @@ class SocketServerHandler {
       _log.info('_clientSendData - ${conn.label} is no longer the client, not sent');
       return;
     }
-    final strSend = jsonEncode(json);
-    final lst = '${strSend.length}:$strSend';
-    _log.fine('_clientSendData(${strSend.length})');
+    final lst = _frame(json);
+    _log.fine('_clientSendData(${lst.length})');
     debugPrint('lst: ${lst.length} bytes');
     conn.socket.add(utf8.encode(lst));
     // socket!.write(lst);
     // socket.flush();
+  }
+
+  /// A message as the client reads it: `<length>:<json>`.
+  String _frame(Map<String, dynamic> json) {
+    final strSend = jsonEncode(json);
+    return '${strSend.length}:$strSend';
   }
 
   void _selectAndSendTweet(_Connection conn, {int tweetIndex = 0}) {

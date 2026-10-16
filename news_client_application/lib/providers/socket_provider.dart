@@ -11,6 +11,8 @@ import 'package:news_client_application/providers/config_provider.dart';
 
 const socketHeadHello = 'CONNECTED:';
 const socketVersion = '1.0';
+// The server's last message when a device from another address took it over: don't reconnect, or the two push each other off
+const codeAlreadyConnected = -99;
 const _initialRetryMs = 2000;
 const _maxRetryMs = 300000; // 5 minutes
 
@@ -50,6 +52,9 @@ class SocketProvider {
   int port;
   String _serverVersion = '';
   bool _exit = false;
+  // Set by codeAlreadyConnected: no reconnecting until reconnect() is called
+  bool _serverInUse = false;
+  String? inUseBy; // the address of the device that has the server
   int _consecutiveFailures = 0;
   int _currentRetryMs = _initialRetryMs;
   final StreamController<SocketResponse> _streamController = StreamController();
@@ -59,7 +64,7 @@ class SocketProvider {
   String get serverVersion => _serverVersion;
 
   void _scheduleConnect(int delayMs) {
-    if (_exit) return;
+    if (_exit || _serverInUse) return;
     _timer?.cancel();
     if (delayMs <= 0) {
       _tryConnect();
@@ -170,7 +175,13 @@ class SocketProvider {
   void _parseData() {
     final utfString = dataToParse;
     debugPrint('parse!');
-    final response = SocketResponse.fromJson(jsonDecode(utfString));
+    final json = jsonDecode(utfString) as Map<String, dynamic>;
+    if (json['code'] == codeAlreadyConnected) {
+      // Before SocketResponse.fromJson, which would throw on the missing counts
+      _onServerInUse(json['data']);
+      return;
+    }
+    final response = SocketResponse.fromJson(json);
     if (response.running == true) {
       if (status.value != SocketStatus.connectedRunning) {
         _log.info('Server monitoring status: running');
@@ -185,6 +196,24 @@ class SocketProvider {
     _streamController.sink.add(response);
   }
 
+  void _onServerInUse(Object? otherAddress) {
+    _log.warning('Server is in use by another device ($otherAddress), not reconnecting');
+    inUseBy = otherAddress?.toString();
+    _serverInUse = true;
+    disconnect();
+  }
+
+  /// Takes the server back after codeAlreadyConnected; the other device is then told to stop in turn.
+  void reconnect() {
+    _log.info('Reconnecting on request (server was in use by ${inUseBy ?? "?"})');
+    _serverInUse = false;
+    inUseBy = null;
+    _consecutiveFailures = 0;
+    _currentRetryMs = _initialRetryMs;
+    _addressIndex = 0;
+    _scheduleConnect(0);
+  }
+
   void clientSendData(Map<String, dynamic> json) {
     assert(_client != null, 'Trying to send when no connected clients');
     final strSend = jsonEncode(json);
@@ -194,7 +223,7 @@ class SocketProvider {
   }
 
   void _closeConnection() {
-    _log.info('Connection closed, will retry');
+    _log.info(_serverInUse ? 'Connection closed, not retrying: the server is in use by another device' : 'Connection closed, will retry');
     disconnect();
     // After a disconnect from established connection, retry quickly first
     _scheduleConnect(_currentRetryMs);
@@ -220,8 +249,8 @@ class SocketProvider {
     _client?.destroy();
     _client = null;
     _serverVersion = '';
-    status.value = SocketStatus.disconnected;
+    status.value = _serverInUse ? SocketStatus.serverInUse : SocketStatus.disconnected;
   }
 }
 
-enum SocketStatus { disconnected, connected, connectedRunning, connectedNotRunning, waiting }
+enum SocketStatus { disconnected, connected, connectedRunning, connectedNotRunning, waiting, serverInUse }
