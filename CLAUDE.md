@@ -35,6 +35,21 @@ dart run build_runner build --delete-conflicting-outputs
 ./make.ps1 build all     # Build all targets
 ```
 
+### Version bump on every build
+Every new build of an app gets a new version number — never ship two builds
+with the same one. Before building, bump `version:` in that app's
+`pubspec.yaml` (`rss_feed_reader` and/or `news_client_application`):
+
+- Use semantic versioning `major.minor.patch+build`: **patch** for bug fixes,
+  **minor** for new features, **major** for breaking changes (e.g. a socket
+  protocol change that needs both apps updated together). Bumping minor resets
+  patch to 0; bumping major resets minor and patch.
+- Always increment the `+build` number too (Android `versionCode` comes from
+  it and must keep increasing); it never resets.
+- Bump only the app(s) actually being rebuilt. The msix package takes its
+  version from `pubspec.yaml`, so no separate bump is needed there.
+- Include the version bump in the commit for the change being built.
+
 ### VS Code launch configs
 Debug configurations for all three projects are defined in `.vscode/launch.json`.
 
