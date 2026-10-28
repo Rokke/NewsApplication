@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
+import 'package:news_client_application/models/frame_decoder.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/config_provider.dart';
 
@@ -46,8 +47,7 @@ class SocketProvider {
   ValueNotifier<SocketStatus> status = ValueNotifier(SocketStatus.disconnected);
   List<String> serverAddresses;
   int _addressIndex = 0;
-  int dataLength = 0;
-  String dataToParse = '';
+  final _decoder = FrameDecoder();
   String? connectedAddress;
   int port;
   String _serverVersion = '';
@@ -125,8 +125,8 @@ class SocketProvider {
 
   void _onData(List<int> data) {
     debugPrint('onData: ${data.length} bytes');
-    final utfString = utf8.decode(data);
     if (status.value == SocketStatus.waiting) {
+      final utfString = utf8.decode(data, allowMalformed: true);
       if (utfString.startsWith(socketHeadHello)) {
         _serverVersion = utfString.split(socketHeadHello).last;
         _log.info('Server greeting received - version: $_serverVersion, sending auth response');
@@ -143,39 +143,22 @@ class SocketProvider {
       }
     } else {
       try {
-        if (dataLength == 0) {
-          final index = utfString.indexOf(':');
-          if (index < 0) {
-            _log.warning('Invalid message format (no colon separator)');
-            _closeConnection();
-            return;
-          }
-          dataLength = int.parse(utfString.substring(0, index));
-          debugPrint('_onData new: $dataLength bytes');
-          dataToParse = utfString.substring(index + 1);
-        } else {
-          debugPrint('_onData continue');
-          dataToParse += utf8.decode(data);
-        }
-        if (dataToParse.length == dataLength) {
-          dataLength = 0;
-          _parseData();
-        } else {
-          debugPrint('_onData will continue: $dataLength - ${dataToParse.length}');
+        final frames = _decoder.add(data);
+        _log.fine('Read ${data.length} bytes: ${frames.length} frame(s), ${_decoder.buffered} characters waiting');
+        for (final json in frames) {
+          // A frame can end the connection (codeAlreadyConnected); the rest of this read belongs to it
+          if (_client == null) break;
+          _parseData(json);
         }
       } catch (e, stackTrace) {
         _log.severe('Data parse error', e, stackTrace);
-        dataLength = 0;
-        dataToParse = '';
         _closeConnection();
       }
     }
   }
 
-  void _parseData() {
-    final utfString = dataToParse;
-    debugPrint('parse!');
-    final json = jsonDecode(utfString) as Map<String, dynamic>;
+  void _parseData(String frame) {
+    final json = jsonDecode(frame) as Map<String, dynamic>;
     if (json['code'] == codeAlreadyConnected) {
       // Before SocketResponse.fromJson, which would throw on the missing counts
       _onServerInUse(json['data']);
@@ -248,8 +231,7 @@ class SocketProvider {
     _client = null;
     _serverVersion = '';
     // A frame cut off with the connection must not swallow the first frame of the next one
-    dataLength = 0;
-    dataToParse = '';
+    _decoder.reset();
     status.value = _serverInUse ? SocketStatus.serverInUse : SocketStatus.disconnected;
   }
 }
