@@ -116,6 +116,17 @@ void main() {
     await _until(() => server.connections == 2);
   });
 
+  test('dispose stops a pending reconnect', () async {
+    final server = await _FakeServer.start([_OnAuth.close]);
+    final client = _createClient(server.port);
+
+    // Disconnected and waiting for the 2 s retry, like the old instance when Settings are saved
+    await _until(() => server.connections == 1 && client.status.value == SocketStatus.disconnected);
+    client.dispose();
+    await Future<void>.delayed(const Duration(seconds: 3));
+    expect(server.connections, 1);
+  });
+
   test('reconnect() connects again', () async {
     final server = await _FakeServer.start([_OnAuth.sendInUse, _OnAuth.stayConnected]);
     final client = _createClient(server.port);

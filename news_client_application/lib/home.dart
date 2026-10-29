@@ -32,7 +32,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     String url = '';
     final width = MediaQuery.of(context).size.width / 3;
-    final socketProvider = ref.read(providerSocket);
+    // Watched: saving Settings replaces the SocketProvider, and the screen must follow the new one
+    final socketProvider = ref.watch(providerSocket);
     return ValueListenableBuilder(
       valueListenable: socketProvider.status,
       builder:
@@ -81,6 +82,8 @@ class _HomePageState extends ConsumerState<HomePage> {
             body:
                 socketProvider.isValid
                     ? StreamBuilder<SocketResponse>(
+                      // A new SocketProvider starts with an empty snapshot instead of the old server's last item
+                      key: ObjectKey(socketProvider),
                       stream: socketProvider.stream,
                       initialData: null,
                       builder: (BuildContext context, AsyncSnapshot<SocketResponse> snapshot) {

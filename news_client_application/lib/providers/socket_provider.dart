@@ -23,9 +23,8 @@ final providerSocket = Provider((ref) {
   final addresses = <String>[config.socketServerInternal, config.socketServerExternal].where((a) => a.isNotEmpty).toList();
   log.info('Config changed - addresses: $addresses');
   final socket = SocketProvider(serverAddresses: addresses, secret: config.socketSecret);
-  ref.onDispose(() {
-    if (!socket.isDisconnected) socket.dispose();
-  });
+  // Also when disconnected: a pending retry timer would otherwise keep the old instance connecting
+  ref.onDispose(socket.dispose);
   return socket;
 });
 
@@ -99,6 +98,12 @@ class SocketProvider {
       _log.warning('Connection failed to $address:$port', err);
     } catch (err, stackTrace) {
       _log.severe('Unexpected connection error', err, stackTrace);
+    }
+    if (_exit) {
+      // Disposed while connecting (Settings saved): drop the connection instead of handshaking on it
+      _client?.destroy();
+      _client = null;
+      return;
     }
 
     if (_client != null) {
@@ -226,7 +231,7 @@ class SocketProvider {
     _log.info('Disconnecting from ${connectedAddress ?? "none"}');
     _timer?.cancel();
     _timer = null;
-    _client?.close();
+    // destroy() alone: close() throws while the handshake's flush is still pending, e.g. when Settings are saved
     _client?.destroy();
     _client = null;
     _serverVersion = '';
