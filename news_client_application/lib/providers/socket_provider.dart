@@ -60,6 +60,8 @@ class SocketProvider {
   Timer? _timer;
   Stream<SocketResponse> get stream => _streamController.stream;
   Socket? _client;
+  // The writes queued on this connection: a write or flush while a flush is pending throws, so each waits for the one before
+  Future<void> _sending = Future.value();
   String get serverVersion => _serverVersion;
 
   void _scheduleConnect(int delayMs) {
@@ -137,8 +139,7 @@ class SocketProvider {
         _log.info('Server greeting received - version: $_serverVersion, sending auth response');
         final authResponse = '$socketHeadHello$socketVersion.$_secret';
         _log.info('Sending auth: "${authResponse.replaceRange(authResponse.length - 3, authResponse.length, '***')}" (${authResponse.length} chars)');
-        _client!.write(authResponse);
-        _client!.flush().then((_) => _log.fine('Auth response flushed'));
+        _send(authResponse, 'auth response');
         status.value = SocketStatus.connected;
         _log.info('Handshake complete - connected to $connectedAddress');
         _resetBackoff();
@@ -204,8 +205,21 @@ class SocketProvider {
     assert(_client != null, 'Trying to send when no connected clients');
     final strSend = jsonEncode(json);
     _log.fine('Sending command: ${json['command']}');
-    _client?.write(strSend);
-    _client?.flush();
+    _send(strSend, 'command ${json['command']}');
+  }
+
+  void _send(String data, String what) {
+    final client = _client;
+    if (client == null) return;
+    _sending = _sending
+        .then((_) async {
+          // The connection went while an earlier write was flushing: this one belonged to it
+          if (!identical(client, _client)) return;
+          client.write(data);
+          await client.flush();
+          _log.fine('Flushed $what');
+        })
+        .catchError((Object err, StackTrace stackTrace) => _log.warning('Sending $what failed', err, stackTrace));
   }
 
   void _closeConnection() {
@@ -234,6 +248,8 @@ class SocketProvider {
     // destroy() alone: close() throws while the handshake's flush is still pending, e.g. when Settings are saved
     _client?.destroy();
     _client = null;
+    // A flush cut off by destroy() may never finish; the next connection must not wait for it
+    _sending = Future.value();
     _serverVersion = '';
     // A frame cut off with the connection must not swallow the first frame of the next one
     _decoder.reset();

@@ -25,6 +25,8 @@ class _FakeServer {
   final _sockets = <Socket>[];
   final List<_OnAuth> script;
   int connections = 0;
+  // Everything a client sent after its auth, over all connections
+  String commands = '';
   int get port => _server.port;
 
   void _send(Socket socket, Map<String, dynamic> message) => socket.add(_frame(message));
@@ -41,9 +43,15 @@ class _FakeServer {
     final onAuth = script[min(connections++, script.length - 1)];
     _sockets.add(socket);
     var received = '';
+    var authenticated = false;
     socket.listen((data) {
+      if (authenticated) {
+        commands += utf8.decode(data);
+        return;
+      }
       received += utf8.decode(data);
       if (!received.endsWith('.secret')) return;
+      authenticated = true;
       switch (onAuth) {
         case _OnAuth.sendInUse:
           _send(socket, {'code': codeAlreadyConnected, 'data': '192.168.1.20'});
@@ -166,5 +174,18 @@ void main() {
     await _until(() => counts.isNotEmpty);
     expect(counts, [3]);
     expect(server.connections, 1);
+  });
+
+  test('two commands sent right after the handshake both reach the server', () async {
+    final server = await _FakeServer.start([_OnAuth.stayConnected]);
+    final client = _createClient(server.port);
+    await _until(() => client.status.value == SocketStatus.connected);
+
+    // Like a quick double click: the second write comes while the auth response and the first command may still be flushing
+    client.clientSendData({'command': 'article_read'});
+    client.clientSendData({'command': 'next_feed'});
+    await _until(() => server.commands.contains('next_feed'));
+    expect(server.commands, '{"command":"article_read"}{"command":"next_feed"}');
+    expect(client.status.value, SocketStatus.connected);
   });
 }
