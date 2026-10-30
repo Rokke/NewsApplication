@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "display_watch.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -28,6 +29,9 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Logs display/session/power changes and refreshes the window on wake.
+  std::unique_ptr<DisplayWatch> display_watch_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

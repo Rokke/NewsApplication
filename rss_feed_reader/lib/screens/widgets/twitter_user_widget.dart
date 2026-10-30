@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:news_common/tweet_encode.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class TwitterUserWidget extends ConsumerWidget {
   const TwitterUserWidget({super.key});
@@ -88,5 +89,11 @@ class TwitterUserWidget extends ConsumerWidget {
   }
 
   Widget _createListItem(BuildContext context, WidgetRef ref, TweetListHeader tweetHead, int index) => tweetUserContainer(context, tweetHead.tweetUsers[index],
-      onRefresh: () => tweetHead.refreshTweetsFromUser(tweetHead.tweetUsers[index]), onDelete: () => _deleteTweetUser(context, ref, index, tweetHead));
+      onRefresh: () {
+        logUi('tweet user refresh pressed: ${tweetHead.tweetUsers[index].id}');
+        tweetHead.refreshTweetsFromUser(tweetHead.tweetUsers[index]);
+      }, onDelete: () {
+        logUi('tweet user delete pressed: ${tweetHead.tweetUsers[index].id}');
+        _deleteTweetUser(context, ref, index, tweetHead);
+      });
 }

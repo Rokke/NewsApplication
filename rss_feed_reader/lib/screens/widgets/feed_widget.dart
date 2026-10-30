@@ -7,6 +7,7 @@ import 'package:rss_feed_reader/screens/widgets/popups/add_feed.dart';
 import 'package:rss_feed_reader/screens/widgets/popups/confirm_dialog.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 import 'package:rss_feed_reader/utils/popup_card.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 // final providerFeeds = Provider<List<FeedData>>((ref) {
 //   final db = ref.watch(rssDatabase);
@@ -102,6 +103,7 @@ class FeedView extends ConsumerWidget {
                       child: SingleChildScrollView(
                         child: ElevatedButton.icon(
                           onPressed: () {
+                            logUi('add feed pressed');
                             Navigator.of(context).push(
                               HeroDialogRoute(
                                 builder: (context) {
@@ -125,7 +127,7 @@ class FeedView extends ConsumerWidget {
                       bottom: 0,
                       child: ElevatedButton.icon(
                         onPressed: () {
-                          debugPrint('findFeedToUpdate');
+                          logUi('update RSS pressed');
                           // _test(context);
                           // playSound(soundFile: Random().nextBool() ? SOUND_FILE.SOUND_NEWTWEET : SOUND_FILE.SOUND_NEWITEM, log: _log);
                           Navigator.pop(context);
@@ -139,7 +141,9 @@ class FeedView extends ConsumerWidget {
                       bottom: 50,
                       child: ElevatedButton.icon(
                         onPressed: () {
+                          logUi('clean database pressed');
                           confirmChoice(context, 'Sletting', 'Er du sikker på at du ønsker å slette alle leste artikler og tweets?').then((value) {
+                            logUi('clean database confirmed: $value');
                             if (value == true) {
                               ref.read(rssDatabase).cleanOldData().then(
                                 (amount) {

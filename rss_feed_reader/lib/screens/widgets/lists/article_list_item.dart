@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:rss_feed_reader/models/feed_encode.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/screens/widgets/category_widget.dart';
@@ -80,8 +81,8 @@ class ArticleListItem extends ConsumerWidget {
             valueListenable: selectedNotifier,
             builder: (context, bool selected, _) => articleContainer(context, article, onRemoveArticle: onRemoveArticle, isSelected: selected, onSelectedArticle: onSelectedArticle)),
       );
-    } catch (error) {
-      debugPrint('Error: $article');
+    } catch (error, stack) {
+      Logger('ArticleListItem').severe('build(${article.id})', error, stack);
       return Text('error: $error');
     }
   }

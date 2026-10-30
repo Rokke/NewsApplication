@@ -152,8 +152,8 @@ class TweetListHeader {
       try {
         _log.info('fetchTweetUsername()-Adding user: ${response['data']}');
         return TweetUserEncode.fromJSON(response['data'] as Map<String, dynamic>);
-      } catch (err) {
-        _log.warning('fetchTweetUsername($url)-Error decode: $response, $err');
+      } catch (err, stack) {
+        _log.warning('fetchTweetUsername($url)-Error decode: $response', err, stack);
       }
     } else {
       _log.warning('fetchTweetUsername($url)-Err response: $response');

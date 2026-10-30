@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:resizable_widget/resizable_widget.dart';
 import 'package:rss_feed_reader/models/rss_tree.dart';
@@ -11,6 +12,8 @@ import 'package:rss_feed_reader/screens/widgets/appbar_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/article_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/details_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/feed_widget.dart';
+import 'package:rss_feed_reader/utils/frame_watch.dart';
+import 'package:rss_feed_reader/utils/log_file.dart';
 import 'package:window_manager/window_manager.dart';
 
 final applicationVersionProvider = FutureProvider<PackageInfo>((ref) {
@@ -51,17 +54,77 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener, WidgetsBindingObserver {
+  static final _log = Logger('HomeScreen');
   @override
   void initState() {
     windowManager.addListener(this);
+    WidgetsBinding.instance.addObserver(this);
     super.initState();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     windowManager.removeListener(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _log.info('lifecycle: $state, ${FrameWatch.sinceLastFrame()}');
+    if (state == AppLifecycleState.resumed) FrameWatch.forceFrame('resumed');
+  }
+
+  @override
+  void onWindowFocus() {
+    _log.info('window: focus, ${FrameWatch.sinceLastFrame()}');
+    FrameWatch.forceFrame('window focus');
+    super.onWindowFocus();
+  }
+
+  @override
+  void onWindowBlur() {
+    _log.info('window: blur');
+    super.onWindowBlur();
+  }
+
+  @override
+  void onWindowMinimize() {
+    _log.info('window: minimize');
+    super.onWindowMinimize();
+  }
+
+  @override
+  void onWindowRestore() {
+    _log.info('window: restore, ${FrameWatch.sinceLastFrame()}');
+    FrameWatch.forceFrame('window restore');
+    super.onWindowRestore();
+  }
+
+  @override
+  void onWindowMaximize() {
+    _log.info('window: maximize');
+    super.onWindowMaximize();
+  }
+
+  @override
+  void onWindowUnmaximize() {
+    _log.info('window: unmaximize');
+    super.onWindowUnmaximize();
+  }
+
+  @override
+  void onWindowClose() {
+    _log.info('window: close');
+    super.onWindowClose();
+  }
+
+  Future<void> _exit(String reason) async {
+    _log.info('ui: exit pressed ($reason)');
+    await AppLog.shutdown(reason);
+    windowManager.close();
+    exit(0);
   }
 
   @override
@@ -107,19 +170,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
             const CircularProgressIndicator(),
             IconButton(
                 icon: const Icon(Icons.exit_to_app),
-                onPressed: () {
-                  windowManager.close();
-                  exit(0);
-                }),
+                onPressed: () => _exit('loading app bar')),
           ],
         ),
         error: (_, __) => AppBar(title: const Text('RSS Oversikt'), actions: [
           IconButton(
               icon: const Icon(Icons.exit_to_app),
-              onPressed: () {
-                windowManager.close();
-                exit(0);
-              }),
+              onPressed: () => _exit('error app bar')),
         ]),
       ),
       body: screenSize.height > 700
@@ -128,6 +185,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WindowListener {
               isHorizontalSeparator: true,
               percentages: config.percentages,
               onResized: (sizes) {
+                _log.finer('ui: divider dragged to ${sizes.first.percentage}');
                 config.updatePercentage(sizes.first.percentage);
               },
               children: const [

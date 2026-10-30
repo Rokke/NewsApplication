@@ -7,7 +7,7 @@ import 'package:rss_feed_reader/providers/config_provider.dart';
 
 final providerIPChecks = Provider<IPChecks?>((ref) {
   final appConfig = ref.watch(providerConfig);
-  if (appConfig.logFilepath.isNotEmpty) return IPChecks.load(appConfig.logFilepath);
+  if (appConfig.dataFilepath.isNotEmpty) return IPChecks.load(appConfig.dataFilepath);
   return null;
 });
 

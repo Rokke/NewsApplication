@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/screens/widgets/popups/color_picker.dart';
 import 'package:rss_feed_reader/utils/popup_card.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 final categoryProvider = FutureProviderFamily<CategoryData?, String>((ref, category) {
   final db = ref.watch(rssDatabase);
@@ -28,6 +29,7 @@ class CategoryWidget extends ConsumerWidget {
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(3)),
           child: InkWell(
             onTap: () async {
+              logUi('category tapped: $categoryName, article: $articleId');
               final ret = await Navigator.of(context).push(
                 HeroDialogRoute(
                   builder: (context) {
@@ -36,6 +38,7 @@ class CategoryWidget extends ConsumerWidget {
                 ),
               );
               if (ret is int) {
+                logUi('category color set: $categoryName');
                 final reader = ref.read;
                 if (category != null) {
                   await reader(rssDatabase).updateCategory(

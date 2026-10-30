@@ -6,6 +6,7 @@ import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/screens/widgets/popups/update_feed.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 import 'package:rss_feed_reader/utils/popup_card.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 // final selectedFeedProvider = StreamProvider.autoDispose.family<FeedData, int>((ref, _id) {
 //   final db = ref.watch(rssDatabase);
@@ -63,6 +64,7 @@ class FeedListItem extends ConsumerWidget {
                             )
                             .toList(),
                         onSelected: (val) {
+                          logUi('feed menu: $val, feed: ${feed.id}');
                           switch (val) {
                             case 'edit':
                               Navigator.of(context).push(
@@ -80,7 +82,6 @@ class FeedListItem extends ConsumerWidget {
                               break;
                             case 'update':
                               isLoading.value = true;
-                              debugPrint('Updateing feed: $feed');
                               feedProvider.updateOrCreateFeed(feed).then((value) => isLoading.value = false);
                               break;
                             case 'delete':

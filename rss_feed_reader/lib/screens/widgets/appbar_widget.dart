@@ -9,8 +9,10 @@ import 'package:rss_feed_reader/providers/server_provider.dart';
 import 'package:rss_feed_reader/screens/settings_screen.dart';
 import 'package:rss_feed_reader/screens/widgets/details_widget.dart';
 import 'package:rss_feed_reader/screens/widgets/monitor_button.dart';
+import 'package:rss_feed_reader/utils/log_file.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class CustomAppBarWidget extends ConsumerWidget {
   // static final _log = Logger('CustomAppBarWidget');
@@ -74,6 +76,7 @@ class CustomAppBarWidget extends ConsumerWidget {
                           ? Text('$amount')
                           : GestureDetector(
                               onTap: () {
+                                logUi('error badge tapped');
                                 showSnackbar(context, errorReported.state!);
                                 errorReported.state = null;
                               },
@@ -109,24 +112,35 @@ class CustomAppBarWidget extends ConsumerWidget {
                 onPressed: !hasUndo
                     ? null
                     : () {
+                        logUi('history pressed (app bar)');
                         feedProvider.showHistoryDialog(context);
                       },
               );
             }),
-        IconButton(onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (context) => const SettingsScreen())), icon: const Icon(Icons.settings)),
+        IconButton(
+            onPressed: () {
+              logUi('settings pressed');
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const SettingsScreen()));
+            },
+            icon: const Icon(Icons.settings)),
         IconButton(
             color: Colors.red,
             icon: const Icon(
               Icons.exit_to_app,
             ),
-            onPressed: () {
+            onPressed: () async {
+              logUi('exit pressed');
+              await AppLog.shutdown('exit button');
               windowManager.close();
               exit(0);
             }),
         if (kDebugMode)
           IconButton(
             icon: const Icon(Icons.hot_tub),
-            onPressed: () => _test(context),
+            onPressed: () {
+              logUi('test pressed');
+              _test(context);
+            },
           ),
       ],
     );

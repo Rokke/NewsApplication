@@ -5,6 +5,7 @@ import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 import 'package:rss_feed_reader/screens/widgets/lists/feed_list_item.dart';
 import 'package:rss_feed_reader/screens/widgets/twitter_user_widget.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class DrawerListItems extends ConsumerStatefulWidget {
   final List<FeedEncode> feeds;
@@ -38,7 +39,12 @@ class _DrawerListItemsState extends ConsumerState<DrawerListItems> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton.icon(
-                  onPressed: !feedSelected.value ? () => feedSelected.value = true : null,
+                  onPressed: !feedSelected.value
+                      ? () {
+                          logUi('drawer: RSS tab');
+                          feedSelected.value = true;
+                        }
+                      : null,
                   icon: const Icon(Icons.rss_feed, color: Colors.red),
                   label: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -46,7 +52,12 @@ class _DrawerListItemsState extends ConsumerState<DrawerListItems> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: feedSelected.value ? () => feedSelected.value = false : null,
+                  onPressed: feedSelected.value
+                      ? () {
+                          logUi('drawer: Twitter tab');
+                          feedSelected.value = false;
+                        }
+                      : null,
                   icon: const Image(
                     image: AssetImage('assets/images/twitter.png'),
                     color: Colors.blue,

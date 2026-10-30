@@ -11,7 +11,15 @@ final providerConfig = ChangeNotifierProvider<ApplicationConfiguration>((ref) =>
 
 class ApplicationConfiguration extends ChangeNotifier {
   final _log = Logger('ApplicationConfiguration');
-  late String socketServerInternal, socketServerExternal, socketSecret, logFilepath;
+  static const defaultLogDirectory = r'D:\Temp\logs\rss_feed_reader';
+  late String socketServerInternal, socketServerExternal, socketSecret;
+
+  /// Folder for the rotating log files. Takes effect on the next start.
+  late String logDirectory;
+
+  /// Folder for data files such as the IP blocklist. Stored under the old
+  /// `logFilepath` key, which used to hold both the log and these files.
+  late String dataFilepath;
   late Size _windowSize;
   late Offset _windowPosition;
   late double _firstPercentage;
@@ -27,18 +35,21 @@ class ApplicationConfiguration extends ChangeNotifier {
     final position = prefs.getString('windowPosition');
     _windowPosition = position != null ? Offset(double.parse(position.split(',')[0]), double.parse(position.split(',')[1])) : Offset(10, 10);
     _firstPercentage = prefs.getDouble('firstPercentage') ?? 0.5;
-    logFilepath = prefs.getString('logFilepath') ?? (kDebugMode ? 'D:\\Temp' : '');
+    logDirectory = prefs.getString('logDirectory') ?? defaultLogDirectory;
+    dataFilepath = prefs.getString('logFilepath') ?? (kDebugMode ? 'D:\\Temp' : '');
   }
 
   Size get windowSize => _windowSize;
   Offset get windowPosition => _windowPosition;
   List<double> get percentages => [_firstPercentage, 1 - _firstPercentage];
-  Future<void> updateSettings({String? socketServerInternal, String? socketServerExternal, String? socketSecret, String? logFilepath}) async {
+  Future<void> updateSettings({String? socketServerInternal, String? socketServerExternal, String? socketSecret, String? logDirectory, String? dataFilepath}) async {
     final prefs = await SharedPreferences.getInstance();
     if (socketServerInternal != null && socketServerInternal != this.socketServerInternal) prefs.setString('socketInternal', this.socketServerInternal = socketServerInternal);
     if (socketServerExternal != null && socketServerExternal != this.socketServerExternal) prefs.setString('socketExternal', this.socketServerExternal = socketServerExternal);
     if (socketSecret != null && socketSecret != this.socketSecret) prefs.setString('socketSecret', this.socketSecret = socketSecret);
-    if (logFilepath != null && logFilepath != this.logFilepath) prefs.setString('logFilepath', this.logFilepath = logFilepath);
+    if (logDirectory != null && logDirectory != this.logDirectory) prefs.setString('logDirectory', this.logDirectory = logDirectory);
+    if (dataFilepath != null && dataFilepath != this.dataFilepath) prefs.setString('logFilepath', this.dataFilepath = dataFilepath);
+    _log.info('updateSettings(): $this');
     notifyListeners();
   }
 
@@ -89,5 +100,5 @@ class ApplicationConfiguration extends ChangeNotifier {
   }
 
   @override
-  String toString() => 'ApplicationConfiguration($socketServerInternal,$socketServerExternal,$logFilepath)';
+  String toString() => 'ApplicationConfiguration($socketServerInternal,$socketServerExternal,log: $logDirectory, data: $dataFilepath)';
 }

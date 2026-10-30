@@ -31,6 +31,9 @@ class AppDb extends _$AppDb {
   final _log = Logger('AppDb');
   AppDb() : super(_openConnection());
 
+  /// For tests: an explicit executor, e.g. `NativeDatabase.memory()`.
+  AppDb.forTesting(super.e);
+
   @override
   int get schemaVersion => 8;
   Future<int> removeActiveStatus(List<int> articleIds) async {

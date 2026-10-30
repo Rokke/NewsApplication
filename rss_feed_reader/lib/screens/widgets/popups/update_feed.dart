@@ -4,6 +4,7 @@ import 'package:logging/logging.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/feed_encode.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class UpdateFeedPopup extends ConsumerWidget {
   static final _log = Logger('UpdateFeedPopup');
@@ -65,7 +66,7 @@ class UpdateFeedPopup extends ConsumerWidget {
                                       },
                                     ),
                               onPressed: () {
-                                debugPrint('new: ${txtFavIcon.text}');
+                                logUi('update feed: fav icon ${txtFavIcon.text}');
                                 favUrlChanged.value = txtFavIcon.text;
                               },
                             );
@@ -98,9 +99,15 @@ class UpdateFeedPopup extends ConsumerWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        ElevatedButton(onPressed: () => Navigator.pop(context, null), child: const Text('Avbryt')),
+                        ElevatedButton(
+                            onPressed: () {
+                              logUi('update feed: cancel');
+                              Navigator.pop(context, null);
+                            },
+                            child: const Text('Avbryt')),
                         ElevatedButton(
                           onPressed: () async {
+                            logUi('update feed: save ${feed.id}');
                             if (feed.id != null &&
                                 (favUrlChanged.value != null ||
                                     (txtTitle.text.isNotEmpty && txtTitle.text != feed.title) ||

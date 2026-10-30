@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 Future<bool?> confirmChoice(BuildContext context, String title, String body) async {
   return showDialog(
@@ -27,9 +28,21 @@ Future<bool?> confirmChoice(BuildContext context, String title, String body) asy
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  ElevatedButton.icon(onPressed: () => Navigator.of(context).pop(false), icon: const Icon(Icons.cancel), label: const Text('Avbryt')),
+                  ElevatedButton.icon(
+                      onPressed: () {
+                        logUi('confirm: cancel');
+                        Navigator.of(context).pop(false);
+                      },
+                      icon: const Icon(Icons.cancel),
+                      label: const Text('Avbryt')),
                   Flexible(child: Container()),
-                  ElevatedButton.icon(onPressed: () => Navigator.of(context).pop(true), icon: const Icon(Icons.verified), label: const Text('OK')),
+                  ElevatedButton.icon(
+                      onPressed: () {
+                        logUi('confirm: OK');
+                        Navigator.of(context).pop(true);
+                      },
+                      icon: const Icon(Icons.verified),
+                      label: const Text('OK')),
                 ],
               ),
             ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:rss_feed_reader/database/database.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class CategoryPopup extends StatelessWidget {
   final CategoryData category;
@@ -31,7 +32,12 @@ class CategoryPopup extends StatelessWidget {
                         builder: (context, constraints) => constraints.maxWidth >= 500
                             ? ColorPicker(pickerColor: category.color != null ? Color(category.color!) : Colors.black, onColorChanged: (c) => color = c.toARGB32())
                             : Container()),
-                    ElevatedButton(onPressed: () => Navigator.pop(context, color), child: const Text('Endre farge')),
+                    ElevatedButton(
+                        onPressed: () {
+                          logUi('color picker: change color');
+                          Navigator.pop(context, color);
+                        },
+                        child: const Text('Endre farge')),
                   ],
                 ),
               ),

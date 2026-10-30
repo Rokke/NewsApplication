@@ -6,6 +6,7 @@ import 'package:news_common/tweet_encode.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
 import 'package:rss_feed_reader/utils/color_constants.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 class TwitterWidget extends ConsumerWidget {
   const TwitterWidget({super.key});
@@ -80,7 +81,10 @@ class TwitterWidget extends ConsumerWidget {
             Positioned(
               child: ClipOval(
                 child: GestureDetector(
-                  onTap: () => launchURL(tweet.tweetWebUrl),
+                  onTap: () {
+                    logUi('tweet profile tapped: ${tweet.id}');
+                    launchURL(tweet.tweetWebUrl);
+                  },
                   child: CachedNetworkImage(
                     imageUrl: tweet.parentUser.profileImageUrl,
                     height: 35,
@@ -111,7 +115,10 @@ class TwitterWidget extends ConsumerWidget {
         return SizeTransition(
             sizeFactor: animation,
             child: tweetContainer(context, twitterHead.tweets[index],
-                onDelete: () => ref.read(providerTweetHeader).removeTweet(twitterHead.tweets[index].id),
+                onDelete: () {
+                  logUi('tweet seen pressed: ${twitterHead.tweets[index].id}');
+                  ref.read(providerTweetHeader).removeTweet(twitterHead.tweets[index].id);
+                },
                 onUpdateProfilePic: () => ref.read(providerTweetHeader).checkAndUpdateUserInfo(twitterHead.tweets[index].parentUser)));
       },
       key: twitterHead.tweetKey,

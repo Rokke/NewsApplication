@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rss_feed_reader/providers/feed_list.dart';
 import 'package:rss_feed_reader/providers/tweet_list.dart';
+import 'package:rss_feed_reader/utils/ui_log.dart';
 
 // const static YOUTUBE_RSS_URL='https://www.youtube.com/feeds/videos.xml?channel_id=';
 class AddFeedPopup extends ConsumerWidget {
@@ -42,10 +43,16 @@ class AddFeedPopup extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          ElevatedButton(onPressed: () => Navigator.pop(context, null), child: const Text('Tilbake')),
+                          ElevatedButton(
+                              onPressed: () {
+                                logUi('add feed: back');
+                                Navigator.pop(context, null);
+                              },
+                              child: const Text('Tilbake')),
                           if (constraints.maxWidth > 400)
                             ElevatedButton(
                               onPressed: () {
+                                logUi('add feed: add (${txtUrl.text})');
                                 if (txtUrl.text.length > 10) {
                                   final feedProvider = ref.read(providerFeedHeader);
                                   feedProvider.updateOrCreateFeed(null, url: txtUrl.text);

@@ -9,6 +9,7 @@ import 'package:rss_feed_reader/models/feed_encode.dart';
 import 'package:rss_feed_reader/providers/network.dart' as network;
 import 'package:rss_feed_reader/screens/widgets/lists/article_list_item.dart';
 import 'package:rss_feed_reader/screens/widgets/lists/feed_list_item.dart';
+import 'package:rss_feed_reader/utils/frame_watch.dart';
 import 'package:rss_feed_reader/utils/misc_functions.dart';
 
 final providerFeedHeader = Provider<FeedListHeader>((ref) {
@@ -28,11 +29,12 @@ class FeedListHeader {
   // int? _lastRemovedId;
   final hasUndoItem = ValueNotifier(false);
   ValueNotifier<bool> isInitialized = ValueNotifier(false);
-  ValueNotifier<int> selectedArticleIndexNotifier = ValueNotifier(-1);
+  final selectedArticleIndexNotifier = SelectionNotifier();
   bool selectNextArticle() {
     if (selectedArticleIndexNotifier.value < articles.length - 1) {
-      ++selectedArticleIndexNotifier.value;
+      _select(selectedArticleIndexNotifier.value + 1, 'next');
     } else {
+      _log.fine('selectNextArticle()-at end(${selectedArticleIndexNotifier.value}, len: ${articles.length})');
       return false;
     }
     return true;
@@ -40,8 +42,9 @@ class FeedListHeader {
 
   bool selectPreviousArticle() {
     if (selectedArticleIndexNotifier.value > 0) {
-      --selectedArticleIndexNotifier.value;
+      _select(selectedArticleIndexNotifier.value - 1, 'previous');
     } else {
+      _log.fine('selectPreviousArticle()-at start(${selectedArticleIndexNotifier.value}, len: ${articles.length})');
       return false;
     }
     return true;
@@ -49,10 +52,37 @@ class FeedListHeader {
 
   ValueNotifier<int> numberOfArticleNotifier = ValueNotifier(0);
   void _updateAmountOfShownArticles() => numberOfArticleNotifier.value = articles.length;
-  ArticleEncode? get selectedArticle => selectedArticleIndexNotifier.value >= 0 ? articles[selectedArticleIndexNotifier.value] : null;
+
+  /// The selected article, or null when nothing is selected or the index no
+  /// longer fits the list.
+  ArticleEncode? get selectedArticle {
+    final index = selectedArticleIndexNotifier.value;
+    return index >= 0 && index < articles.length ? articles[index] : null;
+  }
+
   // ignore: avoid_setters_without_getters
   set changeSelectedArticle(int index) {
-    if (index < articles.length) selectedArticleIndexNotifier.value = index;
+    if (index < articles.length) {
+      _select(index, 'changeSelectedArticle');
+    } else {
+      _log.warning('changeSelectedArticle($index)-out of range, len: ${articles.length}');
+    }
+  }
+
+  /// Every selection change goes through here, so it is logged and the
+  /// listeners are told even when the index stays the same but the article
+  /// behind it changed (after a removal).
+  void _select(int index, String reason) {
+    final old = selectedArticleIndexNotifier.value;
+    _log.info('select($reason): $old -> $index, id: ${index >= 0 && index < articles.length ? articles[index].id : '-'}, len: ${articles.length}');
+    selectedArticleIndexNotifier.select(index);
+    FrameWatch.noteChange('select($reason)');
+  }
+
+  /// Keeps the selection inside the list after articles were removed.
+  void _clampSelection(String reason) {
+    final index = selectedArticleIndexNotifier.value;
+    if (index >= articles.length) _select(articles.length - 1, 'clamp after $reason');
   }
 
   FeedListHeader(this.db) {
@@ -61,6 +91,15 @@ class FeedListHeader {
   Future<void> reloadFeeds() async {
     _log.info('reloadFeeds()');
     isInitialized.value = false;
+    try {
+      await _loadFeedsAndArticles();
+    } catch (err, stack) {
+      _log.severe('reloadFeeds()-failed', err, stack);
+    }
+    isInitialized.value = true;
+  }
+
+  Future<void> _loadFeedsAndArticles() async {
     final lastFound = DateTime.now().millisecondsSinceEpoch;
     feeds = (await db.feeds()).map((e) => FeedEncode.fromDB(e)).toList();
     for (final feed in feeds) {
@@ -68,9 +107,9 @@ class FeedListHeader {
       _log.finest('active(${feed.id}): ${feed.activeArticles.length}');
     }
     articles = (await db.articles()).map((e) => ArticleEncode.fromDB(e, feeds)).toList();
-    debugPrint('_init(), feeds from db: ${feeds.length}');
+    _log.info('reloadFeeds()-feeds: ${feeds.length}, articles: ${articles.length}');
     _updateAmountOfShownArticles();
-    isInitialized.value = true;
+    _clampSelection('reloadFeeds');
   }
 
   Future<bool> findFeedToUpdate({int waitTimeSeconds = 0}) async {
@@ -95,7 +134,7 @@ class FeedListHeader {
   Future<void> removeFeed(int feedId) async {
     final index = feeds.indexWhere((element) => element.id == feedId);
     if (index >= 0) {
-      _log.warning('removeFeed($feedId)-remove');
+      _log.warning('removeFeed($feedId)-remove, articles: ${articles.length}, selected: ${selectedArticleIndexNotifier.value}');
       isInitialized.value = false;
       await db.deleteFeed(feeds[index]);
       var foundArticleIndexToRemove = -1;
@@ -105,6 +144,8 @@ class FeedListHeader {
       final oldFeed = feeds.removeAt(index);
       _listFeedKey.currentState?.removeItem(index, (context, animation) => FeedListItem(feed: oldFeed));
       _updateAmountOfShownArticles();
+      _clampSelection('removeFeed');
+      _log.info('removeFeed($feedId)-done, articles: ${articles.length}, selected: ${selectedArticleIndexNotifier.value}');
       isInitialized.value = true;
     } else {
       _log.warning('removeFeed($feedId)-invalid id');
@@ -112,11 +153,20 @@ class FeedListHeader {
   }
 
   Future<int> markAllRead(int feedId) {
+    _log.info('markAllRead($feedId)-articles: ${articles.length}, selected: ${selectedArticleIndexNotifier.value}');
     final futureRet = db.markAllRead(feedId);
     int foundIndex;
     while ((foundIndex = articles.indexWhere((element) => element.parent.id == feedId)) >= 0) {
+      final before = articles.length;
       changeArticleStatusByIndex(index: foundIndex);
+      // A failed removal would otherwise spin here forever and freeze the app.
+      if (articles.length >= before) {
+        _log.severe('markAllRead($feedId)-article at $foundIndex was not removed, stopping');
+        break;
+      }
     }
+    _clampSelection('markAllRead');
+    _log.info('markAllRead($feedId)-done, articles: ${articles.length}, selected: ${selectedArticleIndexNotifier.value}');
     return futureRet;
   }
 
@@ -125,8 +175,8 @@ class FeedListHeader {
       _log.fine('fetchFeedEncode($url)');
       final channel = await network.readChannel(url, log: _log);
       if (channel != null) return FeedFullDecode.fromChannel(channel, url, parentFeed: parentFeed, log: _log);
-    } catch (err) {
-      _log.warning('fetchFeedEncode($url)', err);
+    } catch (err, stack) {
+      _log.warning('fetchFeedEncode($url)', err, stack);
     }
     return null;
   }
@@ -137,13 +187,7 @@ class FeedListHeader {
       _log.info('unreadLastItem: $unread');
       // final updateId = last10Read;
       hasUndoItem.value = last10ReadArticles.isNotEmpty;
-      db.updateArticleStatus(articleId: unread.id, status: ArticleTableStatus.unread).then((value) async {
-        final articleData = await db.fetchSingleArticle(articleId: unread.id);
-        if (articleData != null) {
-          await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
-          if (selectedArticleIndexNotifier.value > -1) selectedArticleIndexNotifier.value = -1;
-        }
-      });
+      _restoreArticle(unread.id, 'undo');
       return true;
     } else {
       _log.warning('unreadLastItem - not valid');
@@ -151,15 +195,38 @@ class FeedListHeader {
     return false;
   }
 
+  /// Sets an article back to unread and puts it at the end of the list.
+  Future<void> _restoreArticle(int articleId, String reason) async {
+    try {
+      await db.updateArticleStatus(articleId: articleId, status: ArticleTableStatus.unread);
+      final articleData = await db.fetchSingleArticle(articleId: articleId);
+      if (articleData != null) {
+        await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
+        if (selectedArticleIndexNotifier.value > -1) _select(-1, 'after $reason');
+      } else {
+        _log.warning('_restoreArticle($articleId, $reason)-not found in db');
+      }
+    } catch (err, stack) {
+      _log.severe('_restoreArticle($articleId, $reason)', err, stack);
+    }
+  }
+
+  /// Inserts like the feed timer does, for tests.
+  @visibleForTesting
+  Future<void> addArticleToList(ArticleEncode article) => _addNewArticleToList(article);
+
   Future<void> _addNewArticleToList(ArticleEncode article) async {
     int sortedIndex = articles.length;
-    _log.info('_addNewArticleToList(${article.url})-${article.id},${article.active}');
     (article.parent as FeedEncode).activeArticles.add(ArticleActiveRead(id: article.id, url: article.url, lastFoundEpoch: DateTime.now().millisecondsSinceEpoch));
     articles.insert(sortedIndex, article);
-    _listArticleKey.currentState?.insertItem(sortedIndex);
+    final listState = _listArticleKey.currentState;
+    listState?.insertItem(sortedIndex);
+    _log.info('_addNewArticleToList(${article.url})-id: ${article.id}, index: $sortedIndex, len: ${articles.length}, list mounted: ${listState != null}, selected: ${selectedArticleIndexNotifier.value}');
     _updateAmountOfShownArticles();
     if (selectedArticleIndexNotifier.value < 0) {
-      selectedArticleIndexNotifier.value = sortedIndex;
+      _select(sortedIndex, 'first new article');
+    } else {
+      FrameWatch.noteChange('insert article ${article.id}');
     }
   }
 
@@ -169,9 +236,7 @@ class FeedListHeader {
       await db.insertArticle(article.toInsertCompanion).then((value) {
         article.id = value;
         _log.info('_addNewArticle(${article.url})-$value,${article.active}');
-        _addNewArticleToList(article);
-        // (article.parent as FeedEncode).activeArticles.add(ArticleActiveRead(id: article.id, url: article.url, lastFoundEpoch: DateTime.now().millisecondsSinceEpoch));
-        return true;
+        return _addNewArticleToList(article).then((_) => true);
       }).onError((error, stackTrace) async {
         final found = await (db.select(db.article)..where((tbl) => tbl.parent.equals(article.parent.id!) & tbl.url.equals(article.url))).getSingleOrNull();
         if (found != null) {
@@ -185,8 +250,8 @@ class FeedListHeader {
         }
         return false;
       });
-    } catch (err) {
-      _log.warning('_addNewArticle()-Article exist! $article, $err');
+    } catch (err, stack) {
+      _log.warning('_addNewArticle()-Article exist! $article', err, stack);
     }
     return false;
   }
@@ -255,8 +320,8 @@ class FeedListHeader {
             playSound(soundFile: SoundFile.soundNewItem, log: _log);
           }
           _log.info('Still active($hasFeeds, $newArticles): ${updatedFeed.activeArticles.map((e) => e.id).join(",")}, new: $newArticles');
-        } catch (err) {
-          _log.severe('updateOrCreateFeed()-Error: $err');
+        } catch (err, stack) {
+          _log.severe('updateOrCreateFeed()-Error', err, stack);
         }
       } else {
         _log.warning('No feed found for: $url');
@@ -269,8 +334,8 @@ class FeedListHeader {
         feed.lastCheck = DateTime.now().millisecondsSinceEpoch;
         await db.updateFeed(feed.id!, FeedCompanion(lastCheck: Value(feed.lastCheck)));
       }
-    } catch (err) {
-      _log.warning('updateOrCreateFeed($feed): $err');
+    } catch (err, stack) {
+      _log.warning('updateOrCreateFeed($feed)', err, stack);
       throw Exception('updateOrCreateFeed-Error');
     }
   }
@@ -298,33 +363,50 @@ class FeedListHeader {
     return false;
   }
 
+  /// Removes the article from [articles] and from the AnimatedList. The model
+  /// is updated even when the list isn't mounted, so the two can't drift apart.
   void _removeArticleFromList(ArticleEncode article, int index) {
-    _listArticleKey.currentState!
-        .removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: ArticleListItem.articleContainer(context, article)), duration: const Duration(milliseconds: 500));
+    final listState = _listArticleKey.currentState;
+    if (listState != null) {
+      listState.removeItem(index, (context, animation) => SizeTransition(sizeFactor: animation, child: ArticleListItem.articleContainer(context, article)), duration: const Duration(milliseconds: 500));
+    } else {
+      _log.warning('_removeArticleFromList(${article.id}, $index)-article list not mounted');
+    }
     last10ReadArticles.insert(0, articles.removeAt(index));
     if (last10ReadArticles.length > 10) last10ReadArticles.removeLast();
+    _log.info('_removeArticleFromList(${article.id})-index: $index, len: ${articles.length}');
   }
 
   void markCurrentAsRead() {
     if (selectedArticleIndexNotifier.value >= 0) {
       changeArticleStatusByIndex(index: selectedArticleIndexNotifier.value);
+    } else {
+      _log.fine('markCurrentAsRead()-nothing selected');
     }
   }
 
   void changeArticleStatusByIndex({required int index, int newStatus = ArticleTableStatus.read}) {
-    assert(index >= 0, 'changeArticleStatusByIndex($index, $newStatus)-Invalid index');
+    if (index < 0 || index >= articles.length) {
+      _log.warning('changeArticleStatusByIndex($index, $newStatus)-invalid index, len: ${articles.length}');
+      return;
+    }
     try {
-      changeSelectedArticle = -1;
-      _log.info('changeArticleStatus-remove(${articles[index].id}, $index, $newStatus)');
-      db.updateArticleStatus(articleId: articles[index].id, status: newStatus);
+      final article = articles[index];
+      _log.info('changeArticleStatus-remove(${article.id}, $index, $newStatus)-len: ${articles.length}, selected: ${selectedArticleIndexNotifier.value}');
+      db.updateArticleStatus(articleId: article.id, status: newStatus).catchError((Object err, StackTrace stack) {
+        _log.severe('changeArticleStatus(${article.id}, $newStatus)-db update failed', err, stack);
+        return 0;
+      });
       if (newStatus == ArticleTableStatus.read) {
         hasUndoItem.value = true;
-        _removeArticleFromList(articles[index], index);
+        _removeArticleFromList(article, index);
       }
-      if (index < articles.length) changeSelectedArticle = index;
+      // The article at [index] is now the next one (or the list got shorter):
+      // select it again so the details pane follows.
+      _select(articles.isEmpty ? -1 : (index < articles.length ? index : articles.length - 1), 'after status change');
       _updateAmountOfShownArticles();
-    } catch (err) {
-      _log.severe('changeArticleStatus exception', err);
+    } catch (err, stack) {
+      _log.severe('changeArticleStatus exception', err, stack);
     }
   }
 
@@ -346,14 +428,10 @@ class FeedListHeader {
                       trailing: IconButton(
                           icon: const Icon(Icons.undo),
                           onPressed: () {
+                            _log.info('ui: history undo pressed, id: ${e.id}');
                             last10ReadArticles.remove(e);
-                            db.updateArticleStatus(articleId: e.id, status: ArticleTableStatus.unread).then((value) async {
-                              final articleData = await db.fetchSingleArticle(articleId: e.id);
-                              if (articleData != null) {
-                                await _addNewArticleToList(ArticleEncode.fromDB(articleData, feeds));
-                                if (selectedArticleIndexNotifier.value > -1) selectedArticleIndexNotifier.value = -1;
-                              }
-                            });
+                            hasUndoItem.value = last10ReadArticles.isNotEmpty;
+                            _restoreArticle(e.id, 'history');
                             Navigator.of(context).pop();
                           })))
                   .toList(),
@@ -374,9 +452,27 @@ class FeedListHeader {
     assert(id > 0, 'changeArticleStatusById($id, $newStatus)');
     _log.info('changeArticleStatusById($id, $newStatus)');
     final foundIndex = articles.indexWhere((element) => element.id == id);
-    if (foundIndex >= 0) changeArticleStatusByIndex(index: foundIndex);
+    if (foundIndex >= 0) {
+      changeArticleStatusByIndex(index: foundIndex, newStatus: newStatus);
+    } else {
+      _log.warning('changeArticleStatusById($id)-not in list, len: ${articles.length}');
+    }
   }
 
   GlobalKey<AnimatedListState> get articleKey => _listArticleKey;
   GlobalKey<AnimatedListState> get feedKey => _listFeedKey;
+}
+
+/// Selected article index. [select] notifies the listeners even when the index
+/// stays the same, because after a removal the same index is a new article.
+class SelectionNotifier extends ValueNotifier<int> {
+  SelectionNotifier() : super(-1);
+
+  void select(int index) {
+    if (index == value) {
+      notifyListeners();
+    } else {
+      value = index;
+    }
+  }
 }

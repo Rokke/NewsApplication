@@ -36,10 +36,14 @@ bool FlutterWindow::OnCreate() {
   // window is shown. It is a no-op if the first frame hasn't completed yet.
   flutter_controller_->ForceRedraw();
 
+  display_watch_ =
+      std::make_unique<DisplayWatch>(GetHandle(), flutter_controller_.get());
+
   return true;
 }
 
 void FlutterWindow::OnDestroy() {
+  display_watch_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -59,6 +63,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     if (result) {
       return *result;
     }
+  }
+
+  if (display_watch_ && display_watch_->HandleMessage(message, wparam, lparam)) {
+    return 0;
   }
 
   switch (message) {

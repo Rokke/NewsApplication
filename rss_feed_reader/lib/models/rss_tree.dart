@@ -33,8 +33,8 @@ class RSSHead {
         } on NewsAppNetworkException catch (serr, stackTrace) {
           tweetsFailing = true;
           _log.warning('startMonitoring-error', serr, stackTrace);
-        } catch (err) {
-          _log.severe('startMonitoring-Monitor error-${err.runtimeType}', err);
+        } catch (err, stack) {
+          _log.severe('startMonitoring-Monitor error-${err.runtimeType}', err, stack);
           stopMonitoring();
         } finally {
           busy = false;

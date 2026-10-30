@@ -4,46 +4,38 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
 import 'package:rss_feed_reader/providers/network.dart';
 import 'package:rss_feed_reader/screens/home.dart';
+import 'package:rss_feed_reader/utils/frame_watch.dart';
+import 'package:rss_feed_reader/utils/log_file.dart';
+import 'package:rss_feed_reader/utils/power_events.dart';
 import 'package:window_manager/window_manager.dart';
 
-late final IOSink? _sink;
-Future<void> _startLogger(String filepath) async {
-  final fs = File('$filepath\\rss_monitor.log');
-  if (fs.existsSync()) {
-    if (fs.lengthSync() > 100 * 1024) {
-      final backupFile = File('$filepath\\rss_monitor_backup.log');
-      if (backupFile.existsSync()) backupFile.deleteSync();
-      fs.rename('$filepath\\rss_monitor_backup.log');
-    }
-  }
-  _sink = fs.openWrite(mode: FileMode.append);
-  Logger.root.level = kDebugMode ? Level.FINEST : Level.FINE;
-  Logger.root.onRecord.listen((event) async {
-    final logText =
-        '${'${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} [${event.loggerName}] ${event.level} ${event.message}'}${event.error == null ? '' : ', ERR: ${event.error}'}';
-    debugPrint(logText);
-    if (Platform.isWindows && _sink != null) {
-      try {
-        _sink!.writeln(logText);
-      } catch (err) {
-        debugPrint('log error: $err');
-      }
-      // } else {
-      //   debugPrint(
-      //       '${event.time.hour.toString().padLeft(2, '0')}:${event.time.minute.toString().padLeft(2, '0')}:${event.time.second.toString().padLeft(2, '0')},${event.time.millisecond} [${event.loggerName}] ${event.level} ${event.message}\n${event.error != null ? " ${event.error}\n" : ""}');
-    }
-  });
+Future<void> _startLogger(String directory) async {
+  await AppLog.start(Platform.isWindows ? directory : '', level: kDebugMode ? Level.FINEST : Level.FINE);
+  final log = Logger('App');
+  final info = await PackageInfo.fromPlatform();
+  log.info('start: ${info.appName} ${info.version}+${info.buildNumber}, logs in $directory');
+  FlutterError.onError = (details) {
+    log.severe('FlutterError: ${details.exceptionAsString()}${details.context == null ? '' : ' (${details.context})'}', details.exception, details.stack);
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    log.severe('Uncaught error', error, stack);
+    return true;
+  };
 }
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   final appConfig = ApplicationConfiguration();
   await appConfig.initialize();
-  await _startLogger(appConfig.logFilepath);
+  await _startLogger(appConfig.logDirectory);
+  FrameWatch.start();
+  if (Platform.isWindows) PowerEvents.start();
   HttpOverrides.global = MyHttpOverrides();
-  WidgetsFlutterBinding.ensureInitialized();
   // if (Platform.isWindows) DesktopWindow.setWindowSize(const Size(1000, 1300));
   if (Platform.isWindows) {
     await windowManager.ensureInitialized();
