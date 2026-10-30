@@ -85,7 +85,9 @@ std::string DisplayWatch::DescribeMonitors() const {
 void DisplayWatch::Refresh(const std::string& reason) {
   controller_->ForceRedraw();
   RECT rect;
-  if (!IsIconic(window_) && GetWindowRect(window_, &rect)) {
+  // A maximized window keeps its size: resizing it would drop it out of the
+  // maximized layout.
+  if (!IsIconic(window_) && !IsZoomed(window_) && GetWindowRect(window_, &rect)) {
     const int width = rect.right - rect.left;
     const int height = rect.bottom - rect.top;
     const UINT flags =
