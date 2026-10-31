@@ -401,9 +401,11 @@ class FeedListHeader {
         hasUndoItem.value = true;
         _removeArticleFromList(article, index);
       }
-      // The article at [index] is now the next one (or the list got shorter):
-      // select it again so the details pane follows.
-      _select(articles.isEmpty ? -1 : (index < articles.length ? index : articles.length - 1), 'after status change');
+      // The article at [index] is now the next one: select it again so the
+      // details pane follows. Past the end (the last article was marked)
+      // select nothing, so the first new article that arrives gets selected
+      // instead of the one being kept for later.
+      _select(index < articles.length ? index : -1, 'after status change');
       _updateAmountOfShownArticles();
     } catch (err, stack) {
       _log.severe('changeArticleStatus exception', err, stack);

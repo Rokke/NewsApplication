@@ -74,7 +74,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('seen on the last article shows the new last one without throwing', (tester) async {
+  testWidgets('seen on the last article shows no article without throwing', (tester) async {
     final header = await pumpScreen(tester);
     header.changeSelectedArticle = 7;
     await settle(tester);
@@ -82,7 +82,8 @@ void main() {
     await tester.tap(find.byTooltip('Seen'));
     await settle(tester);
 
-    expect(detailsTitle('Article 6'), findsOneWidget);
+    expect(header.selectedArticle, isNull);
+    expect(find.text('Ingen artikkel valgt'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -47,15 +47,26 @@ void main() {
     expect(notified, greaterThan(0));
   });
 
-  test('seen on the last article moves the selection to the new last one', () async {
+  test('seen on the last article leaves nothing selected', () async {
     final header = await _loadedHeader(db);
     header.changeSelectedArticle = 7;
 
     header.markCurrentAsRead();
 
     expect(header.articles, hasLength(7));
-    expect(header.selectedArticleIndexNotifier.value, 6);
-    expect(header.selectedArticle!.title, 'Article 6');
+    expect(header.selectedArticleIndexNotifier.value, -1);
+    expect(header.selectedArticle, isNull);
+  });
+
+  test('after seen on the last article the next new article gets selected', () async {
+    final header = await _loadedHeader(db);
+    header.changeSelectedArticle = 7;
+    header.markCurrentAsRead();
+
+    final newArticle = ArticleEncode(id: 999, parent: header.feeds.first, title: 'New', pubDate: 2000, url: 'https://example.com/new', guid: 'new');
+    await header.addArticleToList(newArticle);
+
+    expect(header.selectedArticle!.title, 'New');
   });
 
   test('a timer insert right after a remove keeps the indexes in step', () async {
