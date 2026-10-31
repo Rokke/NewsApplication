@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:logging/logging.dart';
+import 'package:news_common/frame_decoder.dart';
 import 'package:rss_feed_reader/providers/ipchecks.dart';
 import 'package:rss_feed_reader/providers/server_provider.dart';
 
@@ -56,7 +57,7 @@ class _Peer {
   Future<String> get greeting => _greeting.future.timeout(const Duration(seconds: 5));
   Future<void> get closed => _closed.future.timeout(const Duration(seconds: 5));
   bool get isClosed => _closed.isCompleted;
-  void authenticate({String secret = 'secret'}) => socket.write('$socketHeadHello$socketVersion.$secret');
+  void authenticate({String secret = 'secret', String version = socketVersion}) => socket.write('$socketHeadHello$version.$secret');
 
   /// Everything received after the greeting.
   String get received => utf8.decode(_received);
@@ -292,6 +293,64 @@ void main() {
     await client.closed;
     expect(server.isConnected.value, isFalse);
     expect(log.where((m) => m.contains('server disposed')), hasLength(2));
+  });
+
+  // Unknown commands reach the switch's default branch, which logs them, without touching the database or the providers
+  test('two commands in one read and one command split over two reads are all handled', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+
+    final phone = await _connect(port);
+    expect(await phone.greeting, _hello);
+    phone.authenticate();
+    await _until(() => server.isConnected.value == true);
+
+    phone.socket.add(utf8.encode(encodeFrame({'command': 'test_a'}) + encodeFrame({'command': 'test_b'})));
+    await _until(() => log.any((m) => m.contains('invalid command: (test_b)')));
+    expect(log, anyElement(contains('invalid command: (test_a)')));
+
+    final split = utf8.encode(encodeFrame({'command': 'test_c', 'title': 'Blåbær'}));
+    final cut = split.length - 3; // inside 'æ', so the second read also starts mid-character
+    phone.socket.add(split.sublist(0, cut));
+    await phone.socket.flush();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    phone.socket.add(split.sublist(cut));
+    await _until(() => log.any((m) => m.contains('invalid command: (test_c)')));
+    expect(phone.isClosed, isFalse);
+    expect(server.isConnected.value, isTrue);
+  });
+
+  test('an unframed command drops the client and the server keeps listening', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+
+    final old = await _connect(port);
+    expect(await old.greeting, _hello);
+    old.authenticate();
+    await _until(() => server.isConnected.value == true);
+    old.socket.write('{"command":"next_feed"}');
+    await old.closed;
+    expect(log, anyElement('Dropped 127.0.0.1:${old.socket.port}: invalid command frame'));
+    expect(server.isConnected.value, isFalse);
+
+    final next = await _connect(port);
+    expect(await next.greeting, _hello);
+    next.authenticate();
+    await _until(() => server.isConnected.value == true);
+  });
+
+  test('a client of another protocol major version is dropped at authentication', () async {
+    final log = _captureLog();
+    final (server, port) = await _startServer();
+    final changes = <bool?>[];
+    server.isConnected.addListener(() => changes.add(server.isConnected.value));
+
+    final old = await _connect(port);
+    expect(await old.greeting, _hello);
+    old.authenticate(version: '1.0');
+    await old.closed;
+    expect(changes, isEmpty);
+    expect(log, anyElement('Dropped 127.0.0.1:${old.socket.port}: protocol version 1.0, expected 2.x'));
   });
 
   test('disposing the server while it is still binding leaves the port free', () async {

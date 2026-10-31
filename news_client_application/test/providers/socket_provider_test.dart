@@ -185,7 +185,7 @@ void main() {
     client.clientSendData({'command': 'article_read'});
     client.clientSendData({'command': 'next_feed'});
     await _until(() => server.commands.contains('next_feed'));
-    expect(server.commands, '{"command":"article_read"}{"command":"next_feed"}');
+    expect(server.commands, '26:{"command":"article_read"}23:{"command":"next_feed"}', reason: 'each command framed as <length>:<json>');
     expect(client.status.value, SocketStatus.connected);
   });
 }

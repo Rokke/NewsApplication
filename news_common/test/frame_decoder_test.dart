@@ -1,14 +1,21 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:news_client_application/models/frame_decoder.dart';
+import 'package:news_common/frame_decoder.dart';
 
-/// A frame as the server builds it: the length counts the json's UTF-16 units, the bytes are UTF-8.
+/// A frame as encodeFrame builds it: the length counts the json's UTF-16 units, the bytes are UTF-8.
 List<int> _frame(String json) => utf8.encode('${json.length}:$json');
 
 void main() {
   const a = '{"code":1,"data":{"title":"First: one"}}';
   const b = '{"code":1,"data":{"title":"Second"}}';
+
+  test('encodeFrame builds what the decoder reads back', () {
+    final message = {'command': 'article_read', 'id': 7, 'title': 'Blåbær 🦊'};
+    final frame = encodeFrame(message);
+    expect(frame, startsWith('${jsonEncode(message).length}:'));
+    expect(FrameDecoder().add(utf8.encode(frame)).map(jsonDecode), [message]);
+  });
 
   test('one frame in one read', () {
     expect(FrameDecoder().add(_frame(a)), [a]);

@@ -1,6 +1,7 @@
 library news_common;
 
 export 'feed_encode.dart';
+export 'frame_decoder.dart';
 
 abstract class NewsItem {
   String get text;

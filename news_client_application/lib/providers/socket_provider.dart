@@ -6,12 +6,13 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
-import 'package:news_client_application/models/frame_decoder.dart';
 import 'package:news_client_application/models/socket_response.dart';
 import 'package:news_client_application/providers/config_provider.dart';
+import 'package:news_common/frame_decoder.dart';
 
 const socketHeadHello = 'CONNECTED:';
-const socketVersion = '1.0';
+// 2.0: commands to the server are framed as `<length>:<json>` too
+const socketVersion = '2.0';
 // The server's last message when a device from another address took it over: don't reconnect, or the two push each other off
 const codeAlreadyConnected = -99;
 const _initialRetryMs = 2000;
@@ -203,9 +204,9 @@ class SocketProvider {
 
   void clientSendData(Map<String, dynamic> json) {
     assert(_client != null, 'Trying to send when no connected clients');
-    final strSend = jsonEncode(json);
     _log.fine('Sending command: ${json['command']}');
-    _send(strSend, 'command ${json['command']}');
+    // Framed, so the server can tell two commands in one read, or one split over two, apart
+    _send(encodeFrame(json), 'command ${json['command']}');
   }
 
   void _send(String data, String what) {

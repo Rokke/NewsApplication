@@ -1,6 +1,12 @@
 import 'dart:convert';
 
-/// Splits the server's byte stream into `<length>:<json>` frames, where length counts the json's UTF-16 units.
+/// A socket message in both directions: `<length>:<json>`, where length counts the json's UTF-16 units.
+String encodeFrame(Map<String, dynamic> json) {
+  final text = jsonEncode(json);
+  return '${text.length}:$text';
+}
+
+/// Splits a socket's byte stream into the frames [encodeFrame] builds.
 ///
 /// A TCP read can hold several frames, part of one, or the tail of one and the head of the next, and can cut a
 /// multi-byte character in two; everything not yet complete stays buffered for the next [add].

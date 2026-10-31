@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
+import 'package:news_common/frame_decoder.dart';
 import 'package:rss_feed_reader/database/database.dart';
 import 'package:rss_feed_reader/models/rss_tree.dart';
 import 'package:rss_feed_reader/providers/config_provider.dart';
@@ -14,7 +15,8 @@ import 'package:rss_feed_reader/providers/tweet_list.dart';
 
 const defaultPort = kDebugMode ? 3344 : 3344;
 const socketHeadHello = 'CONNECTED:';
-const socketVersion = '1.0';
+// 2.0: the client's commands are framed as `<length>:<json>` too; a client of another major version is dropped
+const socketVersion = '2.0';
 // Sent to the client, as its last message, when a client from another address replaces it: that device then stops
 // reconnecting, so two devices with the same secret don't keep pushing each other off
 const codeAlreadyConnected = -99;
@@ -45,6 +47,8 @@ class _Connection {
   final String address;
   final int port;
   String handshakeBuffer = '';
+  // Commands after the handshake: a read can hold several, or part of one
+  final decoder = FrameDecoder();
   Timer? authTimer;
   String version = '';
   bool dropped = false;
@@ -218,7 +222,7 @@ class SocketServerHandler {
   /// destroy() right after add() would throw the message away, so close() first and destroy() once it is out or too slow.
   Future<void> _sendLastAndClose(_Connection conn, Map<String, dynamic> message) async {
     try {
-      conn.socket.add(utf8.encode(_frame(message)));
+      conn.socket.add(utf8.encode(encodeFrame(message)));
       await conn.socket.close().timeout(_lastMessageTimeout);
     } catch (err) {
       _log.fine('Last message to ${conn.label} not delivered: $err');
@@ -229,6 +233,12 @@ class SocketServerHandler {
   void _authenticated(_Connection conn) {
     conn.authTimer?.cancel();
     _pending.remove(conn);
+    final major = socketVersion.split('.').first;
+    if (conn.version.split('.').first != major) {
+      // An older phone would send unframed commands, and every one of them would fail
+      _drop(conn, 'protocol version ${conn.version}, expected $major.x', level: Level.WARNING);
+      return;
+    }
     // The newest client wins: from the same address it is most likely the same phone, reconnecting after its connection
     // went silent, so the stale one is dropped silently. From another address it is another device with the same secret:
     // the current one is told codeAlreadyConnected, so it stops reconnecting instead of pushing this one off in turn.
@@ -254,18 +264,12 @@ class SocketServerHandler {
       _log.info('_clientSendData - ${conn.label} is no longer the client, not sent');
       return;
     }
-    final lst = _frame(json);
+    final lst = encodeFrame(json);
     _log.fine('_clientSendData(${lst.length})');
     debugPrint('lst: ${lst.length} bytes');
     conn.socket.add(utf8.encode(lst));
     // socket!.write(lst);
     // socket.flush();
-  }
-
-  /// A message as the client reads it: `<length>:<json>`.
-  String _frame(Map<String, dynamic> json) {
-    final strSend = jsonEncode(json);
-    return '${strSend.length}:$strSend';
   }
 
   void _selectAndSendTweet(_Connection conn, {int tweetIndex = 0}) {
@@ -345,50 +349,75 @@ class SocketServerHandler {
         _log.fine('Handshake incomplete, waiting for more data (${buffer.length} bytes so far)');
       }
     } else {
-      debugPrint('decode');
-      final json = jsonDecode(utfString) as Map<String, dynamic>;
-      debugPrint('decoded: $json');
-      switch (json['command']) {
-        case 'start_monitor':
-          ref.read(rssProvider).startMonitoring();
-          break;
-        case 'previous_feed':
-          _selectAndSendFeed(conn, changeIndex: -1);
-          break;
-        case 'next_feed':
-          _selectAndSendFeed(conn, changeIndex: 1);
-          break;
-        case 'feed':
-          _selectAndSendFeed(conn);
-          break;
-        case 'previous_tweet':
-          _selectAndSendTweet(conn, tweetIndex: -1);
-          break;
-        case 'next_tweet':
-          _selectAndSendTweet(conn, tweetIndex: 1);
-          break;
-        case 'tweet':
-          _selectAndSendTweet(conn);
-          break;
-        case 'tweet_read':
-          final tweetProvider = ref.read(providerTweetHeader);
-          final id = json['id'] as int;
-          if (id >= 0) {
-            tweetProvider.removeTweet(id);
-            _selectAndSendTweet(conn);
-          }
-          break;
-        case 'article_read':
-          final feedProvider = ref.read(providerFeedHeader);
-          final id = json['id'] as int;
-          if (id >= 0) {
-            feedProvider.changeArticleStatusById(id: id);
-            _selectAndSendFeed(conn);
-          }
-          break;
-        default:
-          _log.warning('_clientDataReceived - invalid command: (${json['command']})');
+      // Not `<length>:<json>` frames (e.g. a 1.x client) or not a JSON object: nothing more from it can be trusted
+      final List<String> frames;
+      try {
+        frames = conn.decoder.add(data);
+      } on FormatException catch (err) {
+        _drop(conn, 'invalid command frame', level: Level.WARNING, error: err);
+        return;
       }
+      for (final frame in frames) {
+        // A command can drop or replace this connection; the rest of the read belongs to it
+        if (conn.dropped || !identical(conn, _client)) break;
+        final Object? json;
+        try {
+          json = jsonDecode(frame);
+        } on FormatException catch (err) {
+          _drop(conn, 'invalid command frame', level: Level.WARNING, error: err);
+          return;
+        }
+        if (json is! Map<String, dynamic>) {
+          _drop(conn, 'invalid command frame', level: Level.WARNING, error: 'not a JSON object: $frame');
+          return;
+        }
+        _handleCommand(conn, json);
+      }
+    }
+  }
+
+  void _handleCommand(_Connection conn, Map<String, dynamic> json) {
+    _log.fine('_handleCommand(${json['command']}) from ${conn.label}');
+    switch (json['command']) {
+      case 'start_monitor':
+        ref.read(rssProvider).startMonitoring();
+        break;
+      case 'previous_feed':
+        _selectAndSendFeed(conn, changeIndex: -1);
+        break;
+      case 'next_feed':
+        _selectAndSendFeed(conn, changeIndex: 1);
+        break;
+      case 'feed':
+        _selectAndSendFeed(conn);
+        break;
+      case 'previous_tweet':
+        _selectAndSendTweet(conn, tweetIndex: -1);
+        break;
+      case 'next_tweet':
+        _selectAndSendTweet(conn, tweetIndex: 1);
+        break;
+      case 'tweet':
+        _selectAndSendTweet(conn);
+        break;
+      case 'tweet_read':
+        final tweetProvider = ref.read(providerTweetHeader);
+        final id = json['id'] as int;
+        if (id >= 0) {
+          tweetProvider.removeTweet(id);
+          _selectAndSendTweet(conn);
+        }
+        break;
+      case 'article_read':
+        final feedProvider = ref.read(providerFeedHeader);
+        final id = json['id'] as int;
+        if (id >= 0) {
+          feedProvider.changeArticleStatusById(id: id);
+          _selectAndSendFeed(conn);
+        }
+        break;
+      default:
+        _log.warning('_handleCommand - invalid command: (${json['command']})');
     }
   }
 }
