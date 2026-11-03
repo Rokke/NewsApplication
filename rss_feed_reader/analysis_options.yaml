@@ -11,6 +11,8 @@ analyzer:
   exclude:
     - lib/database/database.g.dart
     - lib/generated_plugin_registrant.dart
+    - build/**
+    - windows/**
   plugins:
     - drift
 #include: package:pedantic/analysis_options.yaml
