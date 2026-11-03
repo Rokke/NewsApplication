@@ -110,4 +110,68 @@ void main() {
     expect(header.articles, hasLength(8));
     expect(header.selectedArticleIndexNotifier.value, 2);
   });
+
+  group('a fetch whose links changed but whose guids stayed (#18)', () {
+    ArticleEncode fetched(FeedEncode feed, int i, {String host = 'example.org', String? guid, int? pubDate}) =>
+        ArticleEncode(parent: feed, title: 'Article $i', pubDate: pubDate ?? 1000 + i, url: 'https://$host/$i', guid: guid ?? 'guid-$i');
+
+    test('adds no rows and moves the urls', () async {
+      final header = await _loadedHeader(db);
+      final feed = header.feeds.first;
+
+      final added = await header.addFetchedArticles(feed, [for (var i = 0; i < 8; i++) fetched(feed, i)]);
+
+      expect(added, 0);
+      final rows = await db.select(db.article).get();
+      expect(rows, hasLength(8));
+      expect(rows.map((r) => r.url), everyElement(startsWith('https://example.org/')));
+      expect(rows.map((r) => r.active), everyElement(isTrue));
+      expect(header.articles, hasLength(8));
+      expect(feed.activeArticles.map((a) => a.url), everyElement(startsWith('https://example.org/')));
+
+      // The next fetch finds them by url again.
+      expect(await header.addFetchedArticles(feed, [for (var i = 0; i < 8; i++) fetched(feed, i)]), 0);
+      expect(await db.select(db.article).get(), hasLength(8));
+    });
+
+    test('keeps a read article read', () async {
+      final header = await _loadedHeader(db);
+      final feed = header.feeds.first;
+      await header.markAllRead(feedId);
+
+      final added = await header.addFetchedArticles(feed, [for (var i = 0; i < 8; i++) fetched(feed, i)]);
+
+      expect(added, 0);
+      expect(header.articles, isEmpty);
+      expect(await db.articles(status: ArticleTableStatus.unread), isEmpty);
+      expect(await db.select(db.article).get(), hasLength(8));
+    });
+
+    test('a guid shared by several items in one fetch is not used', () async {
+      final header = await _loadedHeader(db);
+      final feed = header.feeds.first;
+
+      final added = await header.addFetchedArticles(feed, [fetched(feed, 1, host: 'a.org', guid: 'guid-1'), fetched(feed, 2, host: 'a.org', guid: 'guid-1')]);
+
+      expect(added, 2);
+      expect(await db.select(db.article).get(), hasLength(10));
+    });
+
+    test('skips a new item far older than the newest known article', () async {
+      final header = await _loadedHeader(db);
+      final feed = header.feeds.first;
+      const day = 24 * 3600 * 1000;
+
+      final added = await header.addFetchedArticles(feed, [
+        fetched(feed, 20, guid: 'old', pubDate: 1007 - 181 * day),
+        fetched(feed, 21, guid: 'recent', pubDate: 1007 - 10 * day),
+        fetched(feed, 22, guid: 'new', pubDate: 1007 + day),
+      ]);
+
+      expect(added, 2);
+      final urls = (await db.select(db.article).get()).map((r) => r.url);
+      expect(urls, isNot(contains('https://example.org/20')));
+      expect(urls, containsAll(['https://example.org/21', 'https://example.org/22']));
+    });
+  });
 }

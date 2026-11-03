@@ -75,6 +75,29 @@ class AppDb extends _$AppDb {
     return into(article).insert(articleCompanion);
   }
 
+  /// The newest article in [feedId] with [guid], read or not; null if none.
+  Future<ArticleData?> findArticleByGuid(int feedId, String guid) => (select(article)
+        ..where((tbl) => tbl.parent.equals(feedId) & tbl.guid.equals(guid))
+        ..orderBy([(tbl) => OrderingTerm.desc(tbl.id)])
+        ..limit(1))
+      .getSingleOrNull();
+
+  Future<ArticleData?> findArticleByUrl(int feedId, String url) => (select(article)..where((tbl) => tbl.parent.equals(feedId) & tbl.url.equals(url))).getSingleOrNull();
+
+  /// The newest `pub_date` of any article in [feedId]; null if it has none.
+  Future<int?> newestPubDate(int feedId) {
+    final newest = article.pubDate.max();
+    return (selectOnly(article)
+          ..addColumns([newest])
+          ..where(article.parent.equals(feedId)))
+        .map((row) => row.read(newest))
+        .getSingle();
+  }
+
+  /// Gives article [articleId] the url [url] and marks it active.
+  Future<int> moveArticleUrl(int articleId, String url) =>
+      (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(url: Value(url), active: const Value(true)));
+
   Future<int> updateArticleStatus({required int articleId, int status = ArticleTableStatus.read}) =>
       (update(article)..where((tbl) => tbl.id.equals(articleId))).write(ArticleCompanion(status: Value(status)));
   Future<List<ArticleData>> fetchActiveArticles(int feedId) async => (select(article)..where((tbl) => tbl.parent.equals(feedId) & tbl.active.equals(true))).get();

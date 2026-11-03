@@ -256,6 +256,86 @@ class FeedListHeader {
     return false;
   }
 
+  /// A new item this much older than the feed's newest known article is taken
+  /// for a re-published old one (e.g. after a site migration) and skipped.
+  static const oldItemAge = Duration(days: 180);
+
+  /// Adds the [fetched] items of [feed] that aren't known yet, and marks the
+  /// feed's articles that are no longer in [fetched] inactive. Returns the
+  /// number of articles added.
+  ///
+  /// An item whose url is unknown but whose guid matches an article of the
+  /// same feed is that article with a new link (#18): its url is updated and
+  /// no new row is added.
+  @visibleForTesting
+  Future<int> addFetchedArticles(FeedEncode feed, List<ArticleEncode> fetched) async {
+    final lastEpoch = DateTime.now().millisecondsSinceEpoch;
+    int newArticles = 0;
+    final saveOnlyCategories = await db.fetchCategories(feed.id!);
+    // A guid shared by several items in one fetch doesn't identify an item.
+    final guidCount = <String, int>{};
+    for (final article in fetched) {
+      guidCount[article.guid] = (guidCount[article.guid] ?? 0) + 1;
+    }
+    final newestKnown = await db.newestPubDate(feed.id!);
+    for (final article in fetched) {
+      if (saveOnlyCategories.isNotEmpty && !saveOnlyCategories.any((element) => article.category?.contains(element.$2) ?? false)) {
+        _log.info('Ignoring item: ${article.id}-${article.title}(${article.url}), wrong category: ${article.category}');
+      } else if (article.url.isNotEmpty) {
+        final foundArticle = feed.activeArticles.indexWhere((element) => element.url.compareTo(article.url) == 0);
+        if (foundArticle >= 0) {
+          feed.activeArticles[foundArticle].lastFoundEpoch = lastEpoch;
+          _log.finer('addFetchedArticles()-update lastFoundEpoch on article(${feed.activeArticles[foundArticle].id})');
+        } else if (article.guid.isNotEmpty && guidCount[article.guid] == 1 && await _reuseArticleWithGuid(feed, article, lastEpoch)) {
+          // Same article, new link.
+        } else if (newestKnown != null && article.pubDate < newestKnown - oldItemAge.inMilliseconds) {
+          _log.info('Skipping old item in feed(${feed.id}): ${article.title}(${article.url}), '
+              'pubDate ${DateTime.fromMillisecondsSinceEpoch(article.pubDate)} is more than ${oldItemAge.inDays} days before the newest known ${DateTime.fromMillisecondsSinceEpoch(newestKnown)}');
+        } else {
+          _log.info('Adding new item: ${article.title}(${article.url})');
+          newArticles++;
+          await _addNewArticle(article);
+        }
+      } else {
+        _log.warning('Ignoring empty item: ${article.guid}');
+      }
+    }
+    _log.fine('Finished with ${fetched.length} articles, new: $newArticles');
+    int indexToRemove = -1;
+    final batchIds = <int>[];
+    while ((indexToRemove = feed.activeArticles.indexWhere((element) => element.lastFoundEpoch < lastEpoch)) >= 0) {
+      batchIds.add(feed.activeArticles[indexToRemove].id);
+      feed.activeArticles.removeAt(indexToRemove);
+    }
+    await db.removeActiveStatus(batchIds);
+    return newArticles;
+  }
+
+  /// If [feed] has an article with [article]'s guid, gives it [article]'s url,
+  /// keeps it active and returns true. Its read status is left alone.
+  Future<bool> _reuseArticleWithGuid(FeedEncode feed, ArticleEncode article, int lastEpoch) async {
+    final found = await db.findArticleByGuid(feed.id!, article.guid);
+    if (found == null) return false;
+    var keptId = found.id;
+    if (found.url != article.url) {
+      final withUrl = await db.findArticleByUrl(feed.id!, article.url);
+      if (withUrl != null) {
+        // A row with the new url exists already: keep that one.
+        keptId = withUrl.id;
+        await db.moveArticleUrl(withUrl.id, article.url);
+      } else {
+        await db.moveArticleUrl(found.id, article.url);
+      }
+      _log.info('Same guid, new url in feed(${feed.id}): article($keptId) ${found.url} -> ${article.url} (guid ${article.guid})');
+    } else {
+      await db.moveArticleUrl(found.id, article.url);
+      _log.info('Same guid in feed(${feed.id}): reactivated article($keptId) ${article.url}');
+    }
+    feed.activeArticles.removeWhere((element) => element.id == keptId);
+    feed.activeArticles.add(ArticleActiveRead(id: keptId, url: article.url, lastFoundEpoch: lastEpoch));
+    return true;
+  }
+
   Future<void> updateOrCreateFeed(FeedEncode? feed, {String? imgUrl, String? url}) async {
     assert(feed != null || url != null, 'feed or url must be valid');
     bool hasFeeds = false;
@@ -288,34 +368,7 @@ class FeedListHeader {
         }
         _log.finer('update/add-Feed: ${updatedFeed.id}');
         try {
-          final lastEpoch = DateTime.now().millisecondsSinceEpoch;
-          int newArticles = 0;
-          final saveOnlyCategories = await db.fetchCategories(updatedFeed.id!);
-          for (final article in feedFullEncode.articles) {
-            if (saveOnlyCategories.isNotEmpty && !saveOnlyCategories.any((element) => article.category?.contains(element.$2) ?? false)) {
-              _log.info('Ignoring item: ${article.id}-${article.title}(${article.url}), wrong category: ${article.category}');
-            } else if (article.url.isNotEmpty) {
-              final foundArticle = updatedFeed.activeArticles.indexWhere((element) => element.url.compareTo(article.url) == 0);
-              if (foundArticle < 0) {
-                _log.info('Adding new item: ${article.title}(${article.url})');
-                newArticles++;
-                await _addNewArticle(article);
-              } else {
-                updatedFeed.activeArticles[foundArticle].lastFoundEpoch = lastEpoch;
-                _log.finer('updateOrCreateFeed()-update lastFoundEpoch on article($updatedFeed)');
-              }
-            } else {
-              _log.warning('Ignoring empty item: ${article.guid}');
-            }
-          }
-          _log.fine('Finished with ${feedFullEncode.articles.length} articles, new: $newArticles');
-          int indexToRemove = -1;
-          final batchIds = <int>[];
-          while ((indexToRemove = updatedFeed.activeArticles.indexWhere((element) => element.lastFoundEpoch < lastEpoch)) >= 0) {
-            batchIds.add(updatedFeed.activeArticles[indexToRemove].id);
-            updatedFeed.activeArticles.removeAt(indexToRemove);
-          }
-          await db.removeActiveStatus(batchIds);
+          final newArticles = await addFetchedArticles(updatedFeed, feedFullEncode.articles);
           if (!hasFeeds && newArticles > 0) {
             playSound(soundFile: SoundFile.soundNewItem, log: _log);
           }
