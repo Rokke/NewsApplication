@@ -48,7 +48,26 @@ with the same one. Before building, bump `version:` in that app's
   it and must keep increasing); it never resets.
 - Bump only the app(s) actually being rebuilt. The msix package takes its
   version from `pubspec.yaml`, so no separate bump is needed there.
-- Include the version bump in the commit for the change being built.
+- The bump goes in the release commit that `tool/release.dart` makes (below),
+  not in the fix/feature commits.
+
+### CHANGELOG and releases
+- Every fix or feature adds a line under `## Unreleased` in its app's
+  `CHANGELOG.md` (`news_client_application/` and/or `rss_feed_reader/`),
+  ending with the issue number, e.g. `- Keep the socket open (#12)`. A change
+  to both apps adds a line to both.
+- Releases go through the script, from the repo root, on a clean tree:
+  ```bash
+  fvm dart run tool/release.dart --app news_client_application --bump patch
+  fvm dart run tool/release.dart --app rss_feed_reader --bump minor
+  ```
+  It bumps `version:` by the rule above, moves `## Unreleased` under
+  `## x.y.z — <date>` (fails if it is empty), builds (`flutter build apk
+  --release` / `flutter build windows --release`), commits
+  "Release <app> x.y.z (#n, …)" and pushes the current branch. If the tree is
+  dirty or the build fails it stops with nothing committed. Installing the
+  build and the msix/web publish to mobcon stay manual.
+- Tests for the script: `cd tool && fvm dart test`.
 
 ### VS Code launch configs
 Debug configurations for all three projects are defined in `.vscode/launch.json`.

@@ -1,0 +1,9 @@
+name: release_tool
+description: Release script for the apps in this monorepo (tool/release.dart).
+publish_to: "none"
+
+environment:
+  sdk: ^3.7.0
+
+dev_dependencies:
+  test: ^1.25.0
