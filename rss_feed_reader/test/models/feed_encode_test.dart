@@ -5,8 +5,9 @@ import 'package:rss_feed_reader/models/xml_mapper/channel_mapper.dart';
 import 'package:xml/xml.dart';
 
 void main() {
-  test('feed encode ...', () async {
-    final artText = File('D:\\Temp\\test.raw').readAsStringSync();
+  test('Split the comma-separated categories in test/data/categories.raw',
+      () async {
+    final artText = File('test/data/categories.raw').readAsStringSync();
     final art = artText.split(',').map((e) => e.trim()).toList();
     expect(art[3], 'Nature & Environment');
   });
@@ -14,7 +15,8 @@ void main() {
     final body = File('test/data/engageditem.xml').readAsStringSync();
     final xml = XmlDocument.parse(body);
     final item = ChannelMapper.fromXML(xml.rootElement);
-    expect(item.category, 'Information Technology,Software,Mobile Apps,Technology & Electronics,Handheld & Connected Devices');
+    expect(item.category,
+        'Information Technology,Software,Mobile Apps,Technology & Electronics,Handheld & Connected Devices');
     // expect(item.items.length, 10);
     // expect(item.items.first.category, 'Information Technology,Software,Mobile Apps,Technology & Electronics,Handheld & Connected Devices');
   });
