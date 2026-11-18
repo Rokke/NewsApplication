@@ -71,8 +71,16 @@ with the same one. Before building, bump `version:` in that app's
   `## x.y.z — <date>` (fails if it is empty), builds (`flutter build apk
   --release` / `flutter build windows --release`), commits
   "Release <app> x.y.z (#n, …)" and pushes the current branch. If the tree is
-  dirty or the build fails it stops with nothing committed. Installing the
-  build and the msix/web publish to mobcon stay manual.
+  dirty or the build fails it stops with nothing committed, printing
+  `Release stopped: <why>`. Installing the build and the msix/web publish to
+  mobcon stay manual.
+- The orchestrator asks for each app's release on its own
+  (`projects/newsapplication.yml` in Rokke/orchestrator, `release.apps`,
+  orchestrator#114): an issue counts for an app when its commits touch the
+  app's folder or `news_common`. A yes renames the app's `## Unreleased` to
+  `## x.y.z (date)`, runs the script with `--no-git` (bump and build only,
+  no tree check, no CHANGELOG move, no commit or push), then commits
+  "Release <app> x.y.z (#n, …)" and pushes `Add-category-handling` itself.
 - Tests for the script: `cd tool && fvm dart test`.
 
 ### VS Code launch configs

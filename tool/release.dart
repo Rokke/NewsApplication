@@ -2,10 +2,16 @@
 // Unreleased section, build it, commit and push.
 //
 //   fvm dart run tool/release.dart --app <app> --bump patch|minor|major
+//   fvm dart run tool/release.dart --app <app> --bump minor --no-git
 //
 // Run from the repository root. Fails without committing anything if the
 // working tree is not clean, the Unreleased section is empty or the build
 // fails. Installing the build and the msix/web publish stay manual.
+//
+// --no-git is the orchestrator's release by code (Rokke/orchestrator#114):
+// it renames Unreleased itself and commits and pushes after the script, so
+// the script only bumps the version and builds, on a tree the orchestrator
+// has already changed. Any failure prints "Release stopped: <why>".
 import 'dart:io';
 
 /// Apps this script can release, with the build each one gets.
@@ -109,19 +115,21 @@ Future<void> main(List<String> args) async {
   try {
     await _release(args);
   } on ReleaseException catch (e) {
-    stderr.writeln('release: $e');
+    stderr.writeln('Release stopped: $e');
     exitCode = 1;
   }
 }
 
 Future<void> _release(List<String> args) async {
   final opts = _parseArgs(args);
+  final noGit = opts.containsKey('no-git');
   final app = opts['app'];
   final bumpName = opts['bump'];
   if (app == null || !appBuilds.containsKey(app) || bumpName == null) {
     throw ReleaseException(
       'usage: dart run tool/release.dart '
-      '--app ${appBuilds.keys.join('|')} --bump patch|minor|major',
+      '--app ${appBuilds.keys.join('|')} --bump patch|minor|major '
+      '[--no-git]',
     );
   }
   final bump = Bump.values.firstWhere(
@@ -137,11 +145,17 @@ Future<void> _release(List<String> args) async {
     );
   }
 
-  final status = await _git(['status', '--porcelain']);
-  if (status.trim().isNotEmpty) {
-    throw ReleaseException('Working tree is not clean:\n$status');
+  // The orchestrator has renamed Unreleased already, and checks the tree
+  // and the branch itself.
+  if (!noGit) {
+    final status = await _git(['status', '--porcelain']);
+    if (status.trim().isNotEmpty) {
+      throw ReleaseException('Working tree is not clean:\n$status');
+    }
   }
-  final branch = (await _git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  final branch = noGit
+      ? ''
+      : (await _git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   if (branch == 'HEAD')
     throw ReleaseException('Detached HEAD, nothing to push');
 
@@ -153,11 +167,9 @@ Future<void> _release(List<String> args) async {
   final oldChangelog = changelogFile.readAsStringSync();
 
   final bumped = bumpPubspec(oldPubspec, bump);
-  final moved = moveUnreleased(
-    oldChangelog,
-    displayVersion(bumped.version),
-    today(),
-  );
+  final moved = noGit
+      ? (content: oldChangelog, issues: const <int>[])
+      : moveUnreleased(oldChangelog, displayVersion(bumped.version), today());
 
   void restore() {
     pubspecFile.writeAsStringSync(oldPubspec);
@@ -181,6 +193,10 @@ Future<void> _release(List<String> args) async {
   if (buildExit != 0) {
     restore();
     throw ReleaseException('Build failed (exit $buildExit); nothing committed');
+  }
+  if (noGit) {
+    stdout.writeln('Built $app ${bumped.version}; the caller commits');
+    return;
   }
 
   final message = commitMessage(app, bumped.version, moved.issues);
@@ -210,6 +226,10 @@ Map<String, String> _parseArgs(List<String> args) {
   for (var i = 0; i < args.length; i++) {
     final a = args[i];
     if (!a.startsWith('--')) throw ReleaseException('Unexpected argument "$a"');
+    if (a == '--no-git') {
+      opts['no-git'] = '';
+      continue;
+    }
     final eq = a.indexOf('=');
     if (eq > 0) {
       opts[a.substring(2, eq)] = a.substring(eq + 1);
