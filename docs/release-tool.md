@@ -27,9 +27,9 @@ every build", "CHANGELOG and releases"); this is how it works inside.
   `CHANGELOG.md`, runs `fvm flutter` with the app's `appBuilds` arguments in
   the app folder, commits exactly those two files and pushes the branch to
   `origin`.
-- Nothing half-done is left behind: a failed build writes both files back
-  (`restore`), a failed commit unstages them as well. Other files the build
-  changed are listed and not committed. A failure it checks for is a
+- A failed build writes both files back (`restore`), a failed commit unstages
+  them as well. A failed push leaves the release commit in place, unpushed.
+  Other files the build changed are listed and not committed. A failure it checks for is a
   `ReleaseException`, printed as `Release stopped: <why>` with exit code 1.
 - `--no-git` skips the tree and branch checks, leaves `CHANGELOG.md` alone and
   stops after the build; the caller has renamed `## Unreleased` already and
