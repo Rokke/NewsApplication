@@ -3,7 +3,7 @@
 Every fix or feature adds a line under `## Unreleased`, ending with its issue
 number. `tool/release.dart` moves them under the released version.
 
-## Unreleased
+## 4.1.0 (2026-11-19)
 
 - Frame client commands as `<length>:<json>` on the server too (#13)
 - Log the freeze and refresh the window on wake (#15)
